@@ -22,6 +22,8 @@ public sealed partial class MainWindow : Window
         new("fn", "tile.fn", ""), new("refresh", "tile.refresh", "\uE7F4"), new("usb", "tile.usb", "\uE88E"),
     ];
 
+    IEnumerable<TileDef> OrderedTiles() => settings.TileOrder.Distinct().Select(id=>Tiles.FirstOrDefault(t=>t.Id==id)).Where(t=>t!=null).Cast<TileDef>().Concat(Tiles.Where(t=>!settings.TileOrder.Contains(t.Id)));
+
     readonly LegionDevice device = new();
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly TrayIcon tray;
@@ -63,12 +65,22 @@ public sealed partial class MainWindow : Window
     Border? batteryFill; Grid? batteryFillHost;
     Windows.UI.Color batteryColor = Windows.UI.Color.FromArgb(255, 156, 218, 155);
 
+    [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X,Y; }
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd,ref NativePoint point);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd,int attribute,ref uint value,int size);
+    [DllImport("dwmapi.dll")] static extern int DwmFlush();
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd,int attribute,out uint value,int size);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr insertAfter,int x,int y,int cx,int cy,uint flags);
+    [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr hwnd,IntPtr rect,IntPtr region,uint flags);
+    [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr hwnd,IntPtr region,bool redraw);
 
 
     [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left,Top,Right,Bottom; }
@@ -609,7 +621,6 @@ public sealed partial class MainWindow : Window
         var graphic = new Grid { Height = 100, Margin = new Thickness(12, 0, 12, 0), FlowDirection = FlowDirection.LeftToRight };
         graphic.ColumnDefinitions.Add(new ColumnDefinition());
         graphic.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-        batteryFillHost = new Grid { }.WrapInBorder();
         var outline = new Border { BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(8), BorderBrush = SecondaryText, Padding = new Thickness(5) };
         var inner = new Grid();
         batteryFill = new Border { CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
