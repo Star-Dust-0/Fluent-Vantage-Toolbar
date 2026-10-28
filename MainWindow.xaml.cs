@@ -988,7 +988,7 @@ public sealed partial class MainWindow : Window
             dragging=Root.CapturePointer(e.Pointer);reorderTrace+=$" captured={dragging};";if(!dragging)return;reordering=true;
             startY=row.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
             shift=new TranslateTransform();row.RenderTransform=shift;row.Opacity=.8;
-            row.BorderBrush=new SolidColorBrush(AccentColor);row.BorderThickness=new Thickness(1);e.Handled=true;
+            row.BorderBrush=Primary;row.BorderThickness=new Thickness(1);e.Handled=true;
         };
         Root.PointerMoved+=(_,e)=>{reorderMoves++;if(!dragging)return;double y=e.GetCurrentPoint(rows).Position.Y;shift!.Y=Math.Clamp(y-startY-row.ActualHeight/2,-startY,Math.Max(0,rows.ActualHeight-startY-row.ActualHeight));e.Handled=true;};
         Root.PointerReleased+=(_,e)=>{reorderReleases++;Finish(true);e.Handled=true;};
