@@ -5,9 +5,17 @@ static class L
     public static bool Ar;
     public static string Code = "en";
     public static void Set(string code) { Code = Extra.Table.ContainsKey(code) || code == "ar" ? code : "en"; Ar = Code == "ar"; }
+    static string TitleFor((string en, string ar) v)
+    {
+        string t = v.en;
+        if (Ar) t = v.ar;
+        else if (Code != "en" && Extra.Table.TryGetValue(Code, out var d) && d.TryGetValue("title", out var s)) t = s;
+        return t.Replace("{device}", Hardware.DeviceInfo.Name);
+    }
     public static string T(string key)
     {
         if (!Table.TryGetValue(key, out var v)) return key;
+        if (key == "title") return Hardware.DeviceInfo.Name.Length > 0 ? TitleFor(v) : key;
         if (Ar) return v.ar;
         if (Code != "en" && Extra.Table.TryGetValue(Code, out var d) && d.TryGetValue(key, out var s)) return s;
         return v.en;
