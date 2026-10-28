@@ -213,5 +213,3 @@ sealed class TrayIcon : IDisposable
         if (_icon != IntPtr.Zero) { DestroyIcon(_icon); _icon = IntPtr.Zero; }
     }
 }
-
-using FluentLegionToolbar.Hardware;
