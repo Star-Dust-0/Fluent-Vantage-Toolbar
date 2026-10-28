@@ -549,15 +549,15 @@ public sealed partial class MainWindow : Window
             if(view=="main" && body.Content is StackPanel main) {
                 var last=(FrameworkElement)main.Children.Last();
                 double ink=await PaintedHeightAsync(last);
-                wanted=last.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,ink)).Y+24;
+                wanted=last.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,ink)).Y-canvas.Margin.Top+24;
             }
             if(generation!=geometryGeneration)return;
             // At logon the cloaked window may not be laid out yet, so the painted-ink measure can come back near zero.
             // Never let that produce a tiny (invisible) window: fall back to the measured natural height, with a floor.
-            {
+            if(!preview) {
                 double natural=naturalHeight+Root.Padding.Top+Root.Padding.Bottom;
                 if(double.IsNaN(wanted)||double.IsInfinity(wanted)||wanted<natural*0.6)wanted=natural;
-                wanted=Math.Max(wanted,view=="main"?300:360);
+                wanted=Math.Max(wanted,200);
             }
             var work=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Nearest).WorkArea;
             wanted=Math.Min(wanted,work.Height/scale-16);
