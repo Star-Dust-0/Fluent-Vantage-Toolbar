@@ -30,7 +30,6 @@ public sealed class LegionDevice
     }
     bool targetModel;
     bool fnDisplayState = true; // Owner-requested initial UI assumption, not a firmware write.
-    bool fnDisplayState = true; // Owner-requested initial UI assumption, not a firmware write.
     bool FnInverted => DeviceInfo.FnInverted;
     uint Exchange(uint command, uint ioctl = 0x831020F8)
     {

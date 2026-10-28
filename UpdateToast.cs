@@ -255,18 +255,7 @@ sealed class UpdateToast : Window
         await encoder.FlushAsync();
     }
 
-    internal async Task CaptureAsync(string path)
-    {
-        var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
-        await bitmap.RenderAsync(_root);
-        var buffer = await bitmap.GetPixelsAsync();
-        using var reader = Windows.Storage.Streams.DataReader.FromBuffer(buffer);
-        var pixels = new byte[buffer.Length]; reader.ReadBytes(pixels);
-        using var stream = File.Open(path, FileMode.Create).AsRandomAccessStream();
-        var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
-        encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
-        await encoder.FlushAsync();
-    }
+
 
     public void ShowToast()
     {
