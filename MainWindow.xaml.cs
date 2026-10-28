@@ -138,7 +138,7 @@ public sealed partial class MainWindow : Window
         tray.OnSystemThemeChanged=()=>tray.SetIcon(TrayIconPath());
         tray.NativeTip = true; tray.SetTip("Fluent Vantage Toolbar");
         AppWindow.Closing += (_, e) => { if (!exiting && !preview) { e.Cancel = true; HideFlyout(); } };
-        Closed += (_, _) => { updateLifetime.Cancel();try{updateToast?.Close();}catch{}contextMenu?.Close();timer.Stop(); tray.Dispose(); };
+        Closed += (_, _) => { updateLifetime.Cancel();try{updateToast?.Close();}catch{}contextMenu?.Close();timer.Stop(); tray.Dispose(); Diag("disposed\n"); };
         Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated && !preview && !dialogOpen && !pageNavigating && !showingFlyout && !reordering) HideFlyout(); };
         Root.ActualThemeChanged += (_, _) => { if (!preview) Render(); };
         timer.Tick += async (_, _) => { if (flyoutVisible && view == "main") await Refresh(); };
@@ -1273,7 +1273,7 @@ public sealed partial class MainWindow : Window
                     if(tray.TryGetAnchor(out int qx,out int qy))File.WriteAllText(path+".anchor2",$"{qx},{qy}");
                 }
             }
-            Close();return;
+            Diag("closing\n");Close();Diag("closed\n");return;
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".", name = Path.GetFileName(path);
         await geometryReady;await PresentPreparedAsync();SetCloaked(false);flyoutVisible=true;

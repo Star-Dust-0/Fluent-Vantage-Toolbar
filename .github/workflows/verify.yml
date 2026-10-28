@@ -131,8 +131,9 @@ jobs:
             Start-Sleep -Seconds 4
             if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 6 }
           }
-          function Start-TrayApp($path) {
-            $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--tray-capture' -PassThru
+          function Start-TrayApp($path, $guid) {
+            if (-not $guid) { $guid = [guid]::NewGuid().ToString('B') }
+            $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--tray-capture','--tray-guid',$guid -PassThru
             $clock = [Diagnostics.Stopwatch]::StartNew()
             while (-not (Test-Path "$path.ready") -and -not $p.HasExited -and $clock.Elapsed.TotalSeconds -lt 100) { Start-Sleep -Milliseconds 300; $p.Refresh() }
             if (-not (Test-Path "$path.ready")) { if (Test-Path "$path.log") { Get-Content "$path.log" }; if ($p.HasExited) { "app exited early, code $($p.ExitCode)" }; Stop-Process $p.Id -Force -ErrorAction SilentlyContinue; throw "Tray capture not ready ($path)" }
@@ -183,11 +184,12 @@ jobs:
           # Unclean-exit reattach: kill an instance without NIM_DELETE, then a fresh instance must
           # register (ADD or MODIFY fallback), report a rect, and receive a click.
           $stale = Join-Path $PWD 'tray-stale.png'
-          $p1 = Start-TrayApp $stale
+          $staleGuid = [guid]::NewGuid().ToString('B')
+          $p1 = Start-TrayApp $stale $staleGuid
           Stop-Process $p1.Id -Force
           Start-Sleep -Seconds 2
           Remove-Item "$stale.ready","$stale.anchor" -ErrorAction SilentlyContinue
-          $p2 = Start-TrayApp $stale
+          $p2 = Start-TrayApp $stale $staleGuid
           $sp = (Get-Content "$stale.anchor") -split ','
           Send-Click ([int]$sp[0]) ([int]$sp[1])
           if (-not (Wait-File "$stale.interact" 10)) {
