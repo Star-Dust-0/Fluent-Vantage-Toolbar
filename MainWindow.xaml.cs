@@ -143,7 +143,8 @@ public sealed partial class MainWindow : Window
         Root.ActualThemeChanged += (_, _) => { if (!preview) Render(); };
         timer.Tick += async (_, _) => { if (flyoutVisible && view == "main") await Refresh(); };
         Root.SizeChanged += (_, _) => DiagnosticLog.Write($"Layout dpi={GetDpiForWindow(hwnd)} outer={AppWindow.Size.Width}x{AppWindow.Size.Height} client={AppWindow.ClientSize.Width}x{AppWindow.ClientSize.Height} root={Root.ActualWidth}x{Root.ActualHeight} canvas={canvas.ActualWidth}x{canvas.ActualHeight}");
-        Root.Loaded += async (_, _) => { if (preview) await Capture(); };
+        Root.Loaded += async (_, _) => { if (preview) { Diag("loaded\n"); await Capture(); } };
+        if(preview)Diag("ctor\n");
 
         Render();
         if (!preview)
@@ -1224,8 +1225,11 @@ public sealed partial class MainWindow : Window
         await encoder.FlushAsync();
     }
 
+    public static string? TrayDiag;
+    static void Diag(string line) { if(TrayDiag!=null) { try { File.AppendAllText(TrayDiag, line); } catch { } } }
     async Task Capture()
     {
+        Diag("capture\n");
         // Offline decision tests never download or launch an installer during captures.
         string fixture="""
         {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-v9.0.0-installer-win-x64.exe","browser_download_url":"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe"}]}
@@ -1244,7 +1248,9 @@ public sealed partial class MainWindow : Window
         if(!unknownRejected)throw new InvalidOperationException("Unknown thermal mode accepted");
         // Deterministic render fixture, clearly labelled as preview. Hardware services and the network are never called.
         int index = Array.IndexOf(args, "--capture"); string path = args[index + 1];
+        Diag("tests\n");
         if(args.Contains("--tray-capture")) {
+            Diag("traybranch\n");
             // Real taskbar evidence: report the live shell icon anchor and the icon file this build chose for the current Windows taskbar theme.
             bool anchored=false;int anchorX=0,anchorY=0;
             for(int attempt=0;attempt<320 && !anchored;attempt++) {
