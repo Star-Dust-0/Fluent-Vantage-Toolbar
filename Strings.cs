@@ -3,12 +3,20 @@ namespace FluentLegionToolbar;
 static class L
 {
     public static bool Ar;
-    public static string T(string key) => Table.TryGetValue(key, out var v) ? (Ar ? v.ar : v.en) : key;
+    public static string Code = "en";
+    public static void Set(string code) { Code = Extra.Table.ContainsKey(code) || code == "ar" ? code : "en"; Ar = Code == "ar"; }
+    public static string T(string key)
+    {
+        if (!Table.TryGetValue(key, out var v)) return key;
+        if (Ar) return v.ar;
+        if (Code != "en" && Extra.Table.TryGetValue(Code, out var d) && d.TryGetValue(key, out var s)) return s;
+        return v.en;
+    }
     public static string T(string en, string ar) => Ar ? ar : en;
 
     static readonly Dictionary<string, (string en, string ar)> Table = new()
     {
-        ["title"] = ("My Legion 5 15ITH6H", "جهازي Legion 5 15ITH6H"),
+        ["title"] = ("My {device}", "جهازي {device}"),
         ["battery.header"] = ("MY BATTERY", "البطارية"),
         ["tile.thermal"] = ("Thermal mode", "الوضع الحراري"),
         ["quick.header"] = ("QUICK SETTINGS", "الإعدادات السريعة"),
@@ -16,11 +24,11 @@ static class L
         ["all.settings"] = ("All settings", "جميع الإعدادات"),
         ["warranty.link"] = ("Warranty options", "خيارات الضمان"),
         ["tile.fn"] = ("Fn Lock", "قفل Fn"),
-        ["tile.mic"] = ("Mute", "كتم"),
-        ["tile.conserve"] = ("Conserve", "حفاظ"),
-        ["tile.rapid"] = ("Rapid", "سريع"),
-        ["tile.touchpad"] = ("Touchpad lock", "قفل اللمس"),
-        ["tile.refresh"] = ("60 / 144 Hz", "60 / 144 هرتز"),
+        ["tile.mic"] = ("Mute mic", "كتم الميكروفون"),
+        ["tile.conserve"] = ("Conserve mode", "وضع الحفاظ"),
+        ["tile.rapid"] = ("Rapid charging", "شحن سريع"),
+        ["tile.touchpad"] = ("Touchpad", "قفل اللمس"),
+        ["tile.refresh"] = ("Refresh rate", "معدل التحديث"),
         ["tile.usb"] = ("Always-on USB", "طاقة USB الدائمة"),
         ["menu.open"] = ("Open", "فتح"),
         ["menu.settings"] = ("Toolbar settings", "إعدادات الشريط"),
@@ -40,7 +48,8 @@ static class L
         ["about.title"] = ("About", "حول"),
         ["about.version"] = ("Version", "الإصدار"),
         ["about.developer"] = ("Developer: Mohamed Elnaggar", "المطوّر: محمد النجار"),
-        ["about.credit"] = ("brought to you by app.instinct AI", "brought to you by app.instinct AI"),
+        ["about.contrib"] = ("Contributors: Mohamed Elnaggar (developer), app.instinct (development contributor)", "المساهمون: محمد النجار (المطوّر)، app.instinct (مساهم في التطوير)"),
+        ["about.credit"] = ("brought to you by Instinct", "مقدّم إليكم من Instinct"),
         ["about.note"] = ("Hardware protocols were studied from LenovoLegionToolkit (GPL-3.0). This app is an independent implementation and does not stop Lenovo services.", "دُرست بروتوكولات العتاد من مشروع LenovoLegionToolkit ‏(GPL-3.0). هذا البرنامج تنفيذ مستقل ولا يوقف خدمات Lenovo."),
         ["bat.title"] = ("Battery details", "تفاصيل البطارية"),
         ["bat.header"] = ("Battery", "البطارية"),
@@ -73,8 +82,8 @@ static class L
         ["tip.conserve"] = ("Battery conservation. Mutually exclusive with rapid charge.", "الحفاظ على البطارية. لا يعمل مع الشحن السريع في الوقت نفسه."),
         ["tip.rapid"] = ("Rapid charging. Mutually exclusive with conservation.", "الشحن السريع. لا يعمل مع وضع الحفاظ في الوقت نفسه."),
         ["tip.touchpad"] = ("Lock touchpad. Use Fn+F10 or an external mouse to recover.", "قفل لوحة اللمس. استخدم Fn+F10 أو فأرة خارجية للاستعادة."),
-        ["tip.refresh.ok"] = ("Switch internal display between 60 and 144 Hz.", "تبديل الشاشة الداخلية بين 60 و144 هرتز."),
-        ["tip.refresh.no"] = ("60 and 144 Hz are not both available. No unsupported display mode will be applied.", "لا يتوفر الترددان 60 و144 هرتز معاً. لن يُفرض وضع شاشة غير مدعوم."),
+        ["tip.refresh.ok"] = ("Switch the internal panel between its lowest and highest supported refresh rates.", "تبديل الشاشة الداخلية بين أدنى وأعلى تردد مدعوم."),
+        ["tip.refresh.no"] = ("Two supported refresh rates are required. No unsupported mode is applied.", "لا يتوفر ترددان مدعومان. لن يُفرض وضع شاشة غير مدعوم."),
         ["tip.usb"] = ("Always-on USB can drain the battery. BIOS and firmware policies still apply.", "قد تستنزف طاقة USB الدائمة البطارية. تظل سياسات BIOS والفيرموير سارية."),
         ["dlg.touchpad.title"] = ("Lock the touchpad?", "قفل لوحة اللمس؟"),
         ["dlg.touchpad.body"] = ("Make sure you have an external mouse or can use Fn+F10 to unlock it.", "تأكد من توفر فأرة خارجية أو إمكانية استخدام Fn+F10 لفتح القفل."),
@@ -84,3 +93,6 @@ static class L
         ["lang.name.en"] = ("English", "English"),
     };
 }
+
+
+

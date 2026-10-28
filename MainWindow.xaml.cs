@@ -18,11 +18,10 @@ public sealed partial class MainWindow : Window
     static readonly TileDef[] Tiles =
     [
         new("thermal", "tile.thermal", "\uE713"), new("mic", "tile.mic", "\uE720"), new("conserve", "tile.conserve", "\uEA93"),
-        new("rapid", "tile.rapid", "\uE945"), new("touchpad", "tile.touchpad", "\uE7C9"),
+        new("rapid", "tile.rapid", "\uE945"), new("touchpad", "tile.touchpad", "\uEFA5"),
         new("fn", "tile.fn", ""), new("refresh", "tile.refresh", "\uE7F4"), new("usb", "tile.usb", "\uE88E"),
     ];
 
-    IEnumerable<TileDef> OrderedTiles() => settings.TileOrder.Distinct().Select(id=>Tiles.FirstOrDefault(t=>t.Id==id)).Where(t=>t!=null).Cast<TileDef>().Concat(Tiles.Where(t=>!settings.TileOrder.Contains(t.Id)));
     readonly LegionDevice device = new();
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly TrayIcon tray;
@@ -31,15 +30,32 @@ public sealed partial class MainWindow : Window
     readonly bool preview;
     readonly IntPtr hwnd;
     Grid canvas = null!;
-    readonly Grid titleBar = new() { Height = 36 };
+    readonly Grid titleBar = new() { MinHeight = 36 };
     readonly ContentControl body = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     readonly Dictionary<string, ToggleButton> tileButtons = new();
     DeviceState? current;
+    DeviceDashboardWindow? dashboard;
+    TrayMenuWindow? contextMenu;
     BatteryDetails? batteryDetails;
     WarrantyResult? warranty;
     string? warrantyError;
     bool warrantyLoading;
-    bool busy, dialogOpen;
+    bool busy, dialogOpen, exiting, checkingUpdates;
+    readonly List<Button> updateButtons = new();
+    readonly List<Button> installButtons = new();
+    readonly List<TextBlock> updateResults = new();
+    readonly List<HyperlinkButton> updateLinks = new();
+    string manualUpdateState = "idle";
+    string? manualUpdateUrl, manualUpdateVersion;
+    UpdateAsset? manualUpdateAsset;
+    UpdateToast? updateToast;
+    readonly CancellationTokenSource updateLifetime=new();
+    bool flyoutVisible, showingFlyout, reorderMode, reordering;
+    StackPanel? reorderRows;
+    int reorderPresses,reorderMoves,reorderReleases;
+    string reorderTrace="";
+    int animationGeneration;
+    Microsoft.UI.Xaml.Media.Animation.Storyboard? flyoutMotion;
     string view = "main";
     DateTime lastHidden = DateTime.MinValue;
     TextBlock? percentText, chargeText, statusText;
@@ -47,9 +63,6 @@ public sealed partial class MainWindow : Window
     Border? batteryFill; Grid? batteryFillHost;
     Windows.UI.Color batteryColor = Windows.UI.Color.FromArgb(255, 156, 218, 155);
 
-    [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X,Y; }
-    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd,ref NativePoint point);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
@@ -57,24 +70,26 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
 
-    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd,int attribute,ref uint value,int size);
-    [DllImport("dwmapi.dll")] static extern int DwmFlush();
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr insertAfter,int x,int y,int cx,int cy,uint flags);
-    [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr hwnd,IntPtr rect,IntPtr region,uint flags);
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags);
-    [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int left,int top,int right,int bottom,int width,int height);
-    [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr hwnd,IntPtr region,bool redraw);
+
+    [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left,Top,Right,Bottom; }
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out NativeRect rect);
+    [DllImport("user32.dll")] static extern int GetWindowRgn(IntPtr hwnd,IntPtr region);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateRectRgn(int left,int top,int right,int bottom);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr handle);
 
     public MainWindow(bool startHidden)
     {
         InitializeComponent();
         preview = args.Contains("--capture");
+        if (preview) Hardware.DeviceInfo.Override = "Legion 5 15ITH6H";
         settings = preview ? new AppSettings { Language = args.Contains("--arabic") ? "ar" : "en", Theme = args.Contains("--dark") ? "dark" : "light" } : AppSettings.Load();
-        L.Ar = settings.Language == "ar";
-        Title = "Fluent Legion Toolbar";
+        L.Set(settings.Language);
+        Title = "Fluent Vantage Toolbar";
         SystemBackdrop = new MicaBackdrop();
         ExtendsContentIntoTitleBar = true;
         hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        SetCloaked(true); // Compose while invisible; SW_SHOW exposes an unpainted XAML surface.
+        uint disableTransitions=1;DwmSetWindowAttribute(hwnd,3,ref disableTransitions,4);
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "app.ico")); } catch { }
         if (AppWindow.Presenter is OverlappedPresenter presenter) { presenter.SetBorderAndTitleBar(false, false); presenter.IsResizable = false; presenter.IsMaximizable = false; presenter.IsMinimizable = false; presenter.IsAlwaysOnTop = true; }
         // Presenter flag setters may restore WS_BORDER after SetBorderAndTitleBar.
@@ -84,30 +99,38 @@ public sealed partial class MainWindow : Window
         uint noBorder=0xFFFFFFFE;DwmSetWindowAttribute(hwnd,34,ref noBorder,4);
         HideFromTaskbar();
         double scale = GetDpiForWindow(hwnd) / 96d;
-        AppWindow.Resize(new SizeInt32((int)(520 * scale), (int)(645 * scale)));
+        AppWindow.ResizeClient(new SizeInt32((int)(520 * scale), (int)(520 * scale)));
 
-        Root.Padding = new Thickness(24, 8, 24, 20);
+        Root.Padding = new Thickness(24, 15, 24, 24);
         Root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Root.Children.Add(titleBar);
-        Grid.SetRow(body, 1); Root.Children.Add(body);
+        canvas = new Grid { Height = 492 };
+        canvas.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        canvas.RowDefinitions.Add(new RowDefinition());
+        canvas.Children.Add(titleBar); Grid.SetRow(body, 1); canvas.Children.Add(body);
+        Root.RowDefinitions.Clear(); Root.Padding = new Thickness(24, 15, 24, 24);
+        canvas.HorizontalAlignment = HorizontalAlignment.Stretch; canvas.VerticalAlignment = VerticalAlignment.Top; Root.Children.Add(canvas);
         // Flyout uses a compact custom caption row; the gear and X share one baseline.
         if (preview)
         {
-            Root.Width = 472; Root.Height = 610;
-            AppWindow.Resize(new SizeInt32((int)(580 * scale), (int)(730 * scale)));
+
+            AppWindow.ResizeClient(new SizeInt32((int)(520 * scale), (int)(520 * scale)));
             Root.Background = new SolidColorBrush(Colors.Transparent);
         }
         // Paint the entire borderless client, including pixels allocated by resizing.
         Root.Background=new SolidColorBrush(Colors.Transparent);
         ApplyTheme();
 
-        tray = new TrayIcon(hwnd, Path.Combine(AppContext.BaseDirectory, "app.ico"), TrayItems(), () => ShowFlyout(null, true), OnTrayMenu);
-        tray.NativeTip = true; tray.SetTip("Fluent Legion Toolbar");
-        Closed += (_, _) => { timer.Stop(); tray.Dispose(); };
-        Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated && !preview && !dialogOpen && !pageNavigating) HideFlyout(); };
+        tray = new TrayIcon(hwnd, TrayIconPath(), TrayItems(), () => ShowFlyout(null, true), OnTrayMenu);
+        tray.IsDark=()=>Dark;
+        tray.OnSystemThemeChanged=()=>tray.SetIcon(TrayIconPath());
+        tray.NativeTip = true; tray.SetTip("Fluent Vantage Toolbar");
+        AppWindow.Closing += (_, e) => { if (!exiting && !preview) { e.Cancel = true; HideFlyout(); } };
+        Closed += (_, _) => { updateLifetime.Cancel();try{updateToast?.Close();}catch{}contextMenu?.Close();timer.Stop(); tray.Dispose(); };
+        Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated && !preview && !dialogOpen && !pageNavigating && !showingFlyout && !reordering) HideFlyout(); };
         Root.ActualThemeChanged += (_, _) => { if (!preview) Render(); };
-        timer.Tick += async (_, _) => { if (AppWindow.IsVisible && view == "main") await Refresh(); };
+        timer.Tick += async (_, _) => { if (flyoutVisible && view == "main") await Refresh(); };
+        Root.SizeChanged += (_, _) => DiagnosticLog.Write($"Layout dpi={GetDpiForWindow(hwnd)} outer={AppWindow.Size.Width}x{AppWindow.Size.Height} client={AppWindow.ClientSize.Width}x{AppWindow.ClientSize.Height} root={Root.ActualWidth}x{Root.ActualHeight} canvas={canvas.ActualWidth}x{canvas.ActualHeight}");
         Root.Loaded += async (_, _) => { if (preview) await Capture(); };
 
         Render();
@@ -117,7 +140,8 @@ public sealed partial class MainWindow : Window
             _ = AutomaticUpdatesAsync(updateLifetime.Token);
             _ = Refresh();
             ListenForShowRequests();
-            if (startHidden) AppWindow.Hide();
+            ListenForExitRequests();
+            AppWindow.Show(false);
         }
     }
 
@@ -134,26 +158,101 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
-    void HideFlyout() { if (AppWindow.IsVisible) { lastHidden = DateTime.UtcNow; AppWindow.Hide(); } }
+    void SetCloaked(bool cloak)
+    {
+        uint value=cloak?1u:0u;
+        Marshal.ThrowExceptionForHR(DwmSetWindowAttribute(hwnd,13,ref value,4));
+        if(DwmGetWindowAttribute(hwnd,14,out uint actual,4)>=0 && ((actual&1)!=0)!=cloak)
+            throw new InvalidOperationException("DWM cloak state differs from requested state");
+    }
+    async void HideFlyout()
+    {
+        if(!flyoutVisible && !showingFlyout)return;
+        int generation=++animationGeneration;lastHidden=DateTime.UtcNow;
+        if(flyoutVisible)await AnimateFlyout(false);
+        if(generation!=animationGeneration)return;
+        flyoutVisible=false;SetCloaked(true);
+        flyoutMotion?.Stop();Root.Opacity=1;Root.RenderTransform=new TranslateTransform();
+    }
+    Task AnimateFlyout(bool show)
+    {
+        flyoutMotion?.Stop();
+        if(!MotionEnabled){Root.Opacity=1;Root.RenderTransform=new TranslateTransform();return Task.CompletedTask;}
+        var transform=new TranslateTransform();Root.RenderTransform=transform;
+        var motion=new Microsoft.UI.Xaml.Media.Animation.Storyboard();flyoutMotion=motion;
+        double time=show?220:170;
+        var easing=new Microsoft.UI.Xaml.Media.Animation.CubicEase{EasingMode=show?Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut:Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseIn};
+        var slide=new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation{From=show?42:0,To=show?0:42,Duration=new Duration(TimeSpan.FromMilliseconds(time)),EasingFunction=easing,EnableDependentAnimation=true};
+        var fade=new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation{From=show?0:1,To=show?1:0,Duration=new Duration(TimeSpan.FromMilliseconds(time)),EasingFunction=easing};
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(slide,transform);Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(slide,"Y");
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fade,Root);Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fade,"Opacity");motion.Children.Add(slide);motion.Children.Add(fade);
+        var done=new TaskCompletionSource<bool>();motion.Completed+=(_,_)=>done.TrySetResult(true);motion.Begin();
+        return done.Task;
+    }
+    async Task VerifyPointerReorderAsync(string dir)
+    {
+        reorderMode=true;await NavigateAsync("settings");Render();await geometryReady;
+        if(body.Content is ScrollViewer scroll && reorderRows is {} rows) {
+            Root.UpdateLayout();
+            double offset=rows.TransformToVisual((UIElement)scroll.Content).TransformPoint(new Windows.Foundation.Point()).Y;
+            scroll.ChangeView(null,Math.Max(0,offset-80),null,true);await Task.Delay(200);
+            for(int pass=0;pass<2;pass++) {
+                var from=(FrameworkElement)rows.Children[pass==0?0:2];var to=(FrameworkElement)rows.Children[pass==0?2:0];
+                string id=(string)from.Tag;
+                var h=(FrameworkElement)((Grid)from).Children[0];
+                var start=h.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(h.ActualWidth/2,h.ActualHeight/2));
+                var end=to.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(h.ActualWidth/2,to.ActualHeight/2+(pass==0?12:-12)));
+                if(!GetWindowRect(hwnd,out var rect))throw new InvalidOperationException("Drag bounds unavailable");
+                double scale=GetDpiForWindow(hwnd)/96d;
+                SetCursorPos(rect.Left+(int)(start.X*scale),rect.Top+(int)(start.Y*scale));mouse_event(2,0,0,0,UIntPtr.Zero);await Task.Delay(120);
+                for(int step=1;step<=12;step++) {SetCursorPos(rect.Left+(int)((start.X+(end.X-start.X)*step/12)*scale),rect.Top+(int)((start.Y+(end.Y-start.Y)*step/12)*scale));await Task.Delay(25);}
+                mouse_event(4,0,0,0,UIntPtr.Zero);await Task.Delay(180);
+                if(settings.TileOrder.Count!=Tiles.Length || settings.TileOrder[pass==0?2:0]!=id)throw new InvalidOperationException("Actual pointer reorder did not move expected row");
+                await SaveImage(Path.Combine(dir,$"reorder-pointer-{pass}.png"));
+            }
+            string saved=System.Text.Json.JsonSerializer.Serialize(settings);var loaded=System.Text.Json.JsonSerializer.Deserialize<AppSettings>(saved)!;
+            if(!loaded.TileOrder.SequenceEqual(settings.TileOrder))throw new InvalidOperationException("Order serialization failed");
+            File.WriteAllText(Path.Combine(dir,"reorder-pointer.txt"),$"PASS actual mouse press/move/release twice; administrator={Startup.IsAdmin()}; order={string.Join(",",settings.TileOrder)}; serialization roundtrip passed\n");
+        } else throw new InvalidOperationException("Reorder rows missing");
+        reorderMode=false;await NavigateAsync("main");
+    }
 
+    async Task PresentPreparedAsync()
+    {
+        // Cloaking keeps DWM composition alive, unlike SW_HIDE. Wait for the XAML
+        // render and composition commit before exposing the already-painted surface.
+        Root.UpdateLayout();await NextFrameAsync();
+        await Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(Root).Compositor.RequestCommitAsync();
+        DwmFlush();
+    }
     async void ShowFlyout(string? target, bool toggle)
     {
-        if (toggle && (AppWindow.IsVisible || (DateTime.UtcNow - lastHidden).TotalMilliseconds < 350)) { HideFlyout(); return; }
-        view = target ?? "main";
-        Render();
-        await geometryReady;
-        if (!AppWindow.IsVisible && view != (target ?? "main")) return;
-        if (tray.TryGetAnchor(out int x, out int y))
-        {
-            var area = DisplayArea.GetFromPoint(new PointInt32(x, y), DisplayAreaFallback.Nearest).WorkArea;
-            int left = Math.Clamp(x - AppWindow.Size.Width / 2, area.X, Math.Max(area.X, area.X + area.Width - AppWindow.Size.Width));
-            int top = Math.Clamp(y - AppWindow.Size.Height - 16, area.Y, Math.Max(area.Y, area.Y + area.Height - AppWindow.Size.Height));
-            AppWindow.Move(new PointInt32(left, top));
-        }
-        HideFromTaskbar();
-        AppWindow.Show(); Activate(); SetForegroundWindow(hwnd);
-        PositionTitleBar();
-        _ = Refresh();
+        if (toggle && (flyoutVisible || showingFlyout || (DateTime.UtcNow-lastHidden).TotalMilliseconds<350)) { HideFlyout();return; }
+        int generation=++animationGeneration;showingFlyout=true;
+        try {
+            SetCloaked(true);flyoutVisible=false;
+            view=target??"main";Render();if(preview)await geometryReady;else await Task.WhenAny(geometryReady,Task.Delay(2500));
+            var area=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Nearest).WorkArea;
+            int x=area.X+area.Width-AppWindow.Size.Width/2-12,y=area.Y+area.Height+4;
+            if(tray.TryGetAnchor(out int anchorX,out int anchorY)){x=anchorX;y=anchorY;area=DisplayArea.GetFromPoint(new PointInt32(x,y),DisplayAreaFallback.Nearest).WorkArea;}
+            int left=Math.Clamp(x-AppWindow.Size.Width/2,area.X,Math.Max(area.X,area.X+area.Width-AppWindow.Size.Width));
+            int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height-12));
+            AppWindow.Move(new PointInt32(left,top));HideFromTaskbar();
+            if(!AppWindow.IsVisible)AppWindow.Show(false);
+            flyoutMotion?.Stop();canvas.Opacity=MotionEnabled?0:1;canvas.RenderTransform=new TranslateTransform{Y=MotionEnabled?42:0};
+            await PresentPreparedAsync();
+            if(generation!=animationGeneration)return;
+            SetCloaked(false);flyoutVisible=true;Activate();SetForegroundWindow(hwnd);
+            await AnimateFlyout(true);
+            PositionTitleBar();_ = Refresh();
+            if(preview && args.Contains("--interactive")) {
+                if(SystemBackdrop is not MicaBackdrop || Root.Background is not SolidColorBrush bg || bg.Color.A!=0)throw new InvalidOperationException("Mica obscured");
+                if(AppWindow.Position.Y+AppWindow.Size.Height>area.Y+area.Height-12)throw new InvalidOperationException("Taskbar gap lost");
+            }
+        } catch(Exception ex) when(!preview) {
+            DiagnosticLog.Write("ShowFlyout failed: "+ex);
+            try{ if(!flyoutVisible){SetCloaked(false);Activate();SetForegroundWindow(hwnd);flyoutVisible=true;} }catch{}
+        } finally {showingFlyout=false;}
     }
 
     void ListenForShowRequests()
@@ -168,9 +267,15 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
-    (int, string)[] TrayItems() => [(1, L.T("menu.open")), (2, L.T("menu.settings")), (3, L.T("menu.about"))];
+    (int, string)[] TrayItems() => [(1, L.T("menu.open")), (2, L.T("menu.settings")), (5, UpdateLabel), (3, L.T("menu.about")), (4, L.Ar ? "إغلاق التطبيق" : "Close app")];
 
-    void OnTrayMenu(int id) => ShowFlyout(id switch { 2 => "settings", 3 => "about", _ => "main" }, false);
+    void ExitApp(){++animationGeneration;exiting=true;dashboard=null;contextMenu?.Close();contextMenu=null;Close();}
+    void ListenForExitRequests()
+    {
+        try {var signal=new EventWaitHandle(false,EventResetMode.AutoReset,Startup.ExitEventName);var queue=DispatcherQueue.GetForCurrentThread();new Thread(()=>{while(true){signal.WaitOne();queue.TryEnqueue(ExitApp);}}){IsBackground=true}.Start();}catch{}
+    }
+    bool OpenTrayContext(int x,int y){contextMenu?.Close();contextMenu=new TrayMenuWindow(settings.Theme,TrayItems(),OnTrayMenu,x,y);contextMenu.Closed+=(_,_)=>contextMenu=null;contextMenu.Activate();return true;}
+    void OnTrayMenu(int id){if(id==5){ShowFlyout("about",false);_ = CheckForUpdatesAsync();return;}if(id==4){ExitApp();return;}ShowFlyout(id switch { 2 => "settings", 3 => "about", _ => "main" }, false);}
 
     public void OpenInitial() => ShowFlyout(null, false);
 
@@ -192,7 +297,6 @@ public sealed partial class MainWindow : Window
     void ApplyTheme()
     {
         ApplyAccent();
-        Root.Background=new SolidColorBrush(Colors.Transparent);
         Root.RequestedTheme = settings.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
         Root.FlowDirection = L.Ar ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
     }
@@ -216,7 +320,7 @@ public sealed partial class MainWindow : Window
         var stack=new StackPanel { Spacing=10 };
         stack.Children.Add(Text(L.Ar ? "لون التطبيق" : "Accent color",14,true));
         var swatches=new StackPanel { Orientation=Orientation.Horizontal,Spacing=8 };
-        foreach(string hex in new[]{"#0078D4","#00A6A6","#744DA9","#D83B01","#C239B3","#107C10"}) {
+        foreach(string hex in new[]{"#0078D4","#00A6A6","#9CDA9B","#744DA9","#D83B01","#C239B3","#107C10"}) {
             var button=new Button { Width=40,Height=40,Padding=new Thickness(3),Background=new SolidColorBrush(ParseAccent(hex)!.Value),
                 BorderBrush=Primary,BorderThickness=new Thickness(settings.AccentColor==hex?3:0),Content=settings.AccentColor==hex ? "✓" : "",Foreground=new SolidColorBrush(Colors.White) };
             ToolTipService.SetToolTip(button,hex);
@@ -236,9 +340,9 @@ public sealed partial class MainWindow : Window
             } finally {dialogOpen=false;}
         };
         var reset=new Button { Content=L.Ar ? "استعادة الافتراضي" : "Restore default" };
-        reset.Click+=(_,_)=>{settings.AccentColor=null;settings.Save();dashboard=null;Render();};
+        reset.Click+=(_,_)=>{settings.AccentColor=AppSettings.DefaultAccentColor;settings.Save();dashboard=null;Render();};
         actions.Children.Add(custom);actions.Children.Add(reset);stack.Children.Add(actions);
-        stack.Children.Add(Text(settings.AccentColor ?? (L.Ar ? "لون Windows الافتراضي" : "Windows default accent"),12,false,SecondaryText));
+        stack.Children.Add(Text(settings.AccentColor ?? AppSettings.DefaultAccentColor,12,false,SecondaryText));
         return Card(stack,new Thickness(14));
     }
 
@@ -258,7 +362,7 @@ public sealed partial class MainWindow : Window
         busy = true;
         foreach (var button in tileButtons.Values) button.IsEnabled = false;
         try { await action(); current = await device.ReadAsync(); Apply(); }
-        catch (Exception e) { current = await device.ReadAsync(); Apply(); if (statusText != null) statusText.Text = L.T("notconfirmed") + e.Message; }
+        catch (Exception e) { DiagnosticLog.Write("Control failed: " + e); current = await device.ReadAsync(); Apply(); dialogOpen = true; try { await new ContentDialog { XamlRoot = Root.XamlRoot, Title = L.T("notconfirmed"), Content = (L.Ar ? "لم يتأكد تغيير الإعداد. أعد المحاولة، وإذا استمرت المشكلة افتح سجل التشخيص من الإعدادات وأرسله للدعم." : "The setting change could not be confirmed. Try again. If it continues, open the diagnostic log in Settings and send it to support."), CloseButtonText = "OK" }.ShowAsync(); } finally { dialogOpen = false; } }
         finally { busy = false; }
     }
 
@@ -289,7 +393,10 @@ public sealed partial class MainWindow : Window
             case "thermal": await Run(() => device.CycleThermalAsync()); break;
             case "fn": await Run(() => device.SetFnAsync(!(c?.FnLocked ?? false))); break;
             case "usb": await Run(() => device.SetUsbAsync(c?.UsbMode != 2)); break;
-            case "refresh": await Run(() => device.SetRefreshAsync(c?.RefreshHz == 144 ? 60 : 144)); break;
+            case "refresh":
+                var rates = c?.AvailableHz?.OrderBy(x => x).ToArray();
+                if (rates is { Length: >= 2 }) await Run(() => device.SetRefreshAsync(c?.RefreshHz == rates[^1] ? rates[0] : rates[^1]));
+                break;
             case "mic": await Run(() => device.SetMicrophoneAsync(!(c?.Muted ?? false))); break;
             case "conserve": await Run(() => device.SetModeAsync(c?.Mode == ChargeMode.Conservation ? ChargeMode.Normal : ChargeMode.Conservation)); break;
             case "rapid": await Run(() => device.SetModeAsync(c?.Mode == ChargeMode.Rapid ? ChargeMode.Normal : ChargeMode.Rapid)); break;
@@ -309,7 +416,7 @@ public sealed partial class MainWindow : Window
         null => Windows.UI.Color.FromArgb(255, 156, 218, 155),
         <= 5 => Windows.UI.Color.FromArgb(255, 255, 153, 164),   // Windows 11 critical
         <= 20 => Windows.UI.Color.FromArgb(255, 252, 225, 0),    // Windows 11 caution
-        _ => Windows.UI.Color.FromArgb(255, 156, 218, 155),      // green sampled from the supplied Windows 11 tray battery
+        _ => Windows.UI.Color.FromArgb(255, 156, 218, 155), // battery keeps its original color, independent of the UI accent
     };
 
     // ---- view building ----
@@ -331,54 +438,31 @@ public sealed partial class MainWindow : Window
     }
 
     bool pageNavigating;
-    Image? outgoingPage;
-
-    Brush? navigationBackground;
     bool MotionEnabled => preview ? args.Contains("--interactive") : new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
-
-    async void Navigate(string target)
+    async void Navigate(string target) => await NavigateAsync(target);
+    async Task NavigateAsync(string target)
     {
         if(pageNavigating || target==view)return;
         pageNavigating=true;
-        bool animate=AppWindow.IsVisible && MotionEnabled;
         try {
-            await geometryReady;
-            if(animate) {
-                navigationBackground=Root.Background;
-                Root.Background=new SolidColorBrush(Colors.Transparent);
-                // Keep the outgoing page painted while the incoming page is arranged.
-                var snapshot=new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
-                await snapshot.RenderAsync(canvas);
-                outgoingPage=new Image { Source=snapshot,Width=canvas.ActualWidth,Height=canvas.ActualHeight,
-                    Stretch=Stretch.Fill,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,IsHitTestVisible=false };
-                Root.Children.Add(outgoingPage);
-            }
-            view=target;
-            Render(animate);
-            await geometryReady;
+            await geometryReady;view=target;Render();await geometryReady;
             if(target=="battery" && !preview)_ = LoadBatteryAsync();
             if(target=="warranty" && !preview)_ = LoadWarrantyAsync(false);
-        } catch(Exception error) { DiagnosticLog.Write("Page navigation failed: "+error); }
-        finally {
-            if(outgoingPage!=null){Root.Children.Remove(outgoingPage);outgoingPage=null;}
-            canvas.Opacity=1;canvas.RenderTransform=new TranslateTransform();canvas.Clip=null;
-            if(animate){await NextFrameAsync();Root.Background=navigationBackground;}
-            canvas.Margin=new Thickness(0);SetWindowRgn(hwnd,IntPtr.Zero,true);
-            pageNavigating=false;
-        }
+        } finally {pageNavigating=false;}
     }
 
-    void Render(bool animatePage=false)
+    void Render()
     {
-        L.Ar = settings.Language == "ar";
+        canvas.Margin=new Thickness(0);
+        L.Set(settings.Language);
         ApplyTheme();
+        restoreAfterGeometry=false;
         if (tray != null) tray.SetItems(TrayItems());
         titleBar.Children.Clear(); titleBar.ColumnDefinitions.Clear();
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        string titleText = view switch { "settings" => L.T("settings.title"), "about" => L.T("about.title"), "battery" => L.T("bat.title"), "warranty" => L.T("war.title"), _ => L.T("title") };
+        string titleText = view switch { "settings" => L.T("settings.title"), "about" => L.T("about.title"), "battery" => L.T("bat.title"), "warranty" => L.T("war.title"), "device" => L.Ar ? "عن جهازك" : "About your device", _ => L.T("title") };
         if (view != "main")
         {
             var back = IconButton("\uE72B", L.T("back"), () => Navigate("main"));
@@ -395,11 +479,10 @@ public sealed partial class MainWindow : Window
         var close = IconButton("\uE8BB", L.Ar ? "إغلاق النافذة" : "Close window", HideFlyout);
         Grid.SetColumn(close, 3); titleBar.Children.Add(close);
         PositionTitleBar();
-        tileButtons.Clear();updateButtons.Clear();
-        body.Content = view switch { "settings" => BuildSettings(), "about" => BuildAbout(), "battery" => BuildBattery(), "warranty" => BuildWarranty(), _ => BuildMain() };
+        tileButtons.Clear();updateButtons.Clear();updateResults.Clear();updateLinks.Clear();
+        body.Content = view switch { "settings" => BuildSettings(), "about" => BuildAbout(), "battery" => BuildBattery(), "warranty" => BuildWarranty(), "device" => dashboard ??= new DeviceDashboardWindow(settings.Theme,current,preview), _ => BuildMain() };
         if (view == "main") Apply();
-        if(animatePage){canvas.Opacity=0;canvas.RenderTransform=new TranslateTransform();}
-        ResizeForContent(animatePage);
+        ResizeForContent();
     }
 
     bool restoreAfterGeometry;
@@ -409,7 +492,7 @@ public sealed partial class MainWindow : Window
     int nativeResizeCount;
     double frameWidthPixels=double.NaN,frameHeightPixels=double.NaN;
 
-    void ResizeForContent(bool animatePage=false) => geometryReady=FitGeometryAsync(++geometryGeneration,animatePage);
+    void ResizeForContent() => geometryReady=FitGeometryAsync(++geometryGeneration);
 
     static Task NextFrameAsync()
     {
@@ -417,10 +500,15 @@ public sealed partial class MainWindow : Window
         EventHandler<object>? handler=null;
         handler=(_,_)=>{CompositionTarget.Rendering-=handler;done.TrySetResult(true);};
         CompositionTarget.Rendering+=handler;
-        return done.Task;
+        return WaitFrameAsync(done.Task,()=>CompositionTarget.Rendering-=handler);
+    }
+    static async Task WaitFrameAsync(Task frame,Action cleanup)
+    {
+        // Hidden windows can stop compositor ticks. Do not leave geometry blocked.
+        await Task.WhenAny(frame,Task.Delay(34));cleanup();
     }
 
-    async Task FitGeometryAsync(int generation,bool animatePage=false)
+    async Task FitGeometryAsync(int generation)
     {
         await geometryLock.WaitAsync();
         try {
@@ -431,9 +519,9 @@ public sealed partial class MainWindow : Window
             Root.UpdateLayout();
             double scale=Math.Max(1,GetDpiForWindow(hwnd)/96d);
             {
-                // Window chrome is the difference between outer and client size. Never derive it from Root.ActualWidth:
-                // at logon the cloaked window may not be laid out yet (ActualWidth 0), which made the "frame" equal to
-                // the whole window and doubled the size to full screen.
+                // Window chrome is outer size minus client size. Never derive it from Root.ActualWidth:
+                // at logon the cloaked window may not be laid out yet (ActualWidth 0), which made the "frame"
+                // equal to the whole window and doubled the size to full screen.
                 var outer=AppWindow.Size;var client=AppWindow.ClientSize;
                 double fw=outer.Width-client.Width,fh=outer.Height-client.Height;
                 double limit=48*scale;
@@ -449,25 +537,21 @@ public sealed partial class MainWindow : Window
             if(view=="main" && body.Content is StackPanel main) {
                 var last=(FrameworkElement)main.Children.Last();
                 double ink=await PaintedHeightAsync(last);
-                wanted=last.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,ink)).Y-canvas.Margin.Top+24;
+                wanted=last.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,ink)).Y+24;
             }
             if(generation!=geometryGeneration)return;
+            // At logon the cloaked window may not be laid out yet, so the painted-ink measure can come back near zero.
+            // Never let that produce a tiny (invisible) window: fall back to the measured natural height, with a floor.
+            {
+                double natural=naturalHeight+Root.Padding.Top+Root.Padding.Bottom;
+                if(double.IsNaN(wanted)||double.IsInfinity(wanted)||wanted<natural*0.6)wanted=natural;
+                wanted=Math.Max(wanted,view=="main"?300:360);
+            }
             var work=DisplayArea.GetFromWindowId(AppWindow.Id,DisplayAreaFallback.Nearest).WorkArea;
             wanted=Math.Min(wanted,work.Height/scale-16);
             var desired=new SizeInt32((int)Math.Round(520*scale+frameWidthPixels),(int)Math.Round(wanted*scale+frameHeightPixels));
             desired=new SizeInt32(Math.Min(desired.Width,(int)Math.Round(520*scale+48*scale)),Math.Min(desired.Height,work.Height));
-            if(animatePage) {
-                // Anchor the native bottom edge. A single atomic rect update per frame
-                // prevents a resize/move mismatch; the snapshot covers layout preparation.
-                var pos=AppWindow.Position;var actual=AppWindow.Size;
-                var visible=new RectInt32(pos.X,pos.Y,actual.Width,actual.Height);
-                var start=new PointInt32(visible.X,visible.Y);var size=new SizeInt32(visible.Width,visible.Height);
-                int bottom=start.Y+size.Height;
-                int left=Math.Clamp(start.X+(size.Width-desired.Width)/2,work.X,Math.Max(work.X,work.X+work.Width-desired.Width));
-                int top=Math.Clamp(bottom-desired.Height,work.Y,Math.Max(work.Y,work.Y+work.Height-desired.Height));
-                await AnimatePageGeometryAsync(generation,new RectInt32(left,top,desired.Width,desired.Height));
-            } else {
-                // Hidden/static paths still make exactly one final size commit.
+            {
                 if(AppWindow.Size.Width!=desired.Width || AppWindow.Size.Height!=desired.Height) {
                     AppWindow.Resize(desired);nativeResizeCount++;
                 }
@@ -475,70 +559,19 @@ public sealed partial class MainWindow : Window
                 if(!preview && tray!=null && tray.TryGetAnchor(out int x,out int y)) {
                     var area=DisplayArea.GetFromPoint(new PointInt32(x,y),DisplayAreaFallback.Nearest).WorkArea;
                     int left=Math.Clamp(x-AppWindow.Size.Width/2,area.X,Math.Max(area.X,area.X+area.Width-AppWindow.Size.Width));
-                    int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height-12));
+                    int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height));
                     if(AppWindow.Position.X!=left || AppWindow.Position.Y!=top)AppWindow.Move(new PointInt32(left,top));
                 }
             }
             if(restoreAfterGeometry && generation==geometryGeneration){restoreAfterGeometry=false;AppWindow.Show();}
-        } finally {geometryLock.Release();}
-    }
-
-    async Task AnimatePageGeometryAsync(int generation,RectInt32 target)
-    {
-        var position=AppWindow.Position;var size=AppWindow.Size;
-        var start=new RectInt32(position.X,position.Y,size.Width,size.Height);
-        const int duration=300;
-        var transform=new TranslateTransform { Y=96 };canvas.RenderTransform=transform;
-        var motion=new Microsoft.UI.Xaml.Media.Animation.Storyboard();
-        var ease=new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode=Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut };
-        void Add(DependencyObject element,string property,double from,double to) {
-            var animation=new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation { From=from,To=to,Duration=new Duration(TimeSpan.FromMilliseconds(duration)),EasingFunction=ease,EnableDependentAnimation=true };
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation,element);
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation,property);motion.Children.Add(animation);
-        }
-        Add(transform,"Y",96,0);Add(canvas,"Opacity",0,1);
-        if(outgoingPage!=null)Add(outgoingPage,"Opacity",1,0);
-        canvas.Margin=new Thickness(0);SetWindowRgn(hwnd,IntPtr.Zero,true);
-        int bottom=start.Y+start.Height;
-        var envelope=new RectInt32(target.X,Math.Min(start.Y,target.Y),target.Width,Math.Max(start.Height,target.Height));
-        AppWindow.MoveAndResize(envelope);
-        canvas.Margin=new Thickness(0,start.Y-envelope.Y,0,0);
-        var initialRegion=CreateRectRgn(0,start.Y-envelope.Y,start.Width,bottom-envelope.Y);
-        SetWindowRgn(hwnd,initialRegion,true);
-        await NextFrameAsync();Root.UpdateLayout();await NextFrameAsync();
-        motion.Begin();
-        var clock=Stopwatch.StartNew();int steps=0;
-        var trace=new List<string>();
-        while(generation==geometryGeneration && AppWindow.IsVisible && !exiting) {
-            double t=Math.Clamp(clock.Elapsed.TotalMilliseconds/duration,0,1);
-            double eased=1-Math.Pow(1-t,3);
-            int Mix(int a,int b)=>(int)Math.Round(a+(b-a)*eased);
-            var rect=new RectInt32(Mix(start.X,target.X),Mix(start.Y,target.Y),Mix(start.Width,target.Width),Mix(start.Height,target.Height));
-            if(t>0) {
-                canvas.Margin=new Thickness(0,(rect.Y-envelope.Y)/(GetDpiForWindow(hwnd)/96d),0,0);
-                var region=CreateRectRgn(0,rect.Y-envelope.Y,rect.Width,rect.Y+rect.Height-envelope.Y);
-                SetWindowRgn(hwnd,region,true);steps++;
+            if(preview && args.Contains("--interactive")) {
+                if(!GetWindowRect(hwnd,out var actual) || actual.Right-actual.Left!=desired.Width || actual.Bottom-actual.Top!=desired.Height)throw new InvalidOperationException("Native bounds differ from settled content size");
+                var region=CreateRectRgn(0,0,0,0);int kind=GetWindowRgn(hwnd,region);DeleteObject(region);
+                if(kind!=0 || canvas.Margin.Top!=0)throw new InvalidOperationException("Retained region or canvas offset");
+                var dir=Path.GetDirectoryName(args[Array.IndexOf(args,"--capture")+1])!;
+                File.AppendAllText(Path.Combine(dir,"navigation-native-bounds.csv"),$"{view},{actual.Left},{actual.Top},{actual.Right},{actual.Bottom},region={kind},offset={canvas.Margin.Top},dpi={GetDpiForWindow(hwnd)}\n");
             }
-            Root.UpdateLayout();
-            Root.Clip=new RectangleGeometry { Rect=new Windows.Foundation.Rect(-Root.Padding.Left,-Root.Padding.Top,Root.ActualWidth,Root.ActualHeight) };
-            trace.Add($"{clock.Elapsed.TotalMilliseconds:F1},{rect.X},{rect.Y},{rect.Width},{rect.Height},{rect.Y+rect.Height}");
-            if(t>=1)break;
-            await Task.Delay(10);await NextFrameAsync();
-        }
-        if(generation==geometryGeneration && AppWindow.IsVisible) {
-            SetWindowPos(hwnd,IntPtr.Zero,target.X,target.Y,target.Width,target.Height,0x0104);nativeResizeCount++;
-            canvas.Margin=new Thickness(0);SetWindowRgn(hwnd,IntPtr.Zero,true);
-            Root.UpdateLayout();await NextFrameAsync();
-        }
-        motion.Stop();canvas.Opacity=1;transform.Y=0;
-
-        DiagnosticLog.Write($"Page motion {view}: {start.Height}->{target.Height}; {steps} atomic geometry steps; {clock.ElapsedMilliseconds}ms; dpi={GetDpiForWindow(hwnd)}");
-        if(preview && args.Contains("--interactive")) {
-            var dir=Path.GetDirectoryName(args[Array.IndexOf(args,"--capture")+1])!;
-            File.AppendAllLines(Path.Combine(dir,"navigation-geometry.csv"),new[]{$"PAGE,{view},{start.Height},{target.Height},{steps},{clock.ElapsedMilliseconds}"}.Concat(trace));
-            if(start.Height!=target.Height && steps<3)throw new InvalidOperationException("Page size changed without intermediate animation frames");
-            if(AppWindow.IsVisible && (AppWindow.Size.Height!=target.Height || AppWindow.Position.Y!=target.Y))throw new InvalidOperationException("Page animation missed its final bounds");
-        }
+        } finally {geometryLock.Release();}
     }
 
     async Task<double> PaintedHeightAsync(FrameworkElement element)
@@ -576,6 +609,7 @@ public sealed partial class MainWindow : Window
         var graphic = new Grid { Height = 100, Margin = new Thickness(12, 0, 12, 0), FlowDirection = FlowDirection.LeftToRight };
         graphic.ColumnDefinitions.Add(new ColumnDefinition());
         graphic.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        batteryFillHost = new Grid { }.WrapInBorder();
         var outline = new Border { BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(8), BorderBrush = SecondaryText, Padding = new Thickness(5) };
         var inner = new Grid();
         batteryFill = new Border { CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
@@ -596,8 +630,8 @@ public sealed partial class MainWindow : Window
         chargeText = Text("", 12, false, SecondaryText);
         stack.Children.Add(chargeText);
 
-        stack.Children.Add(HeaderRow(L.T("quick.header"), L.T("all.settings"), () => OpenUrl("ms-settings:")));
-        var visible = OrderedTiles().Where(t => settings.IsTileVisible(t.Id)).ToList();
+        stack.Children.Add(HeaderRow(L.T("quick.header"), L.Ar ? "عن جهازك" : "About your device", OpenDashboard));
+        var visible = Tiles.Where(t => settings.IsTileVisible(t.Id)).ToList();
         var rows = new StackPanel { Spacing = 14 };
         for (int i = 0; i < visible.Count; i += 5)
         {
@@ -609,7 +643,7 @@ public sealed partial class MainWindow : Window
 
         statusText = Text("", 12, false, SecondaryText);
         statusText.MaxHeight = 60;
-        stack.Children.Add(statusText);
+        // Availability details belong in Settings, not the main flyout.
         if (settings.ShowWarranty)
         {
             var warrantyLink = new HyperlinkButton { Content = L.T("warranty.link"), HorizontalAlignment = HorizontalAlignment.Right, Padding=new Thickness(0), MinHeight=0, VerticalAlignment=VerticalAlignment.Top };
@@ -622,17 +656,21 @@ public sealed partial class MainWindow : Window
     FrameworkElement MakeTile(TileDef tile)
     {
         var button = new ToggleButton { Width = 56, Height = 56, CornerRadius = new CornerRadius(28), HorizontalAlignment = HorizontalAlignment.Center, IsEnabled = false, Padding = new Thickness(0) };
-        button.Resources["ToggleButtonBackgroundChecked"] = Rgb(0, 105, 112);
-        button.Resources["ToggleButtonBackgroundCheckedPointerOver"] = Rgb(0, 119, 126);
-        button.Resources["ToggleButtonBackgroundCheckedPressed"] = Rgb(0, 89, 96);
-        button.Resources["ToggleButtonForegroundChecked"] = Rgb(255, 255, 255);
-        button.Resources["ToggleButtonForegroundCheckedPointerOver"] = Rgb(255, 255, 255);
-        button.Resources["ToggleButtonForegroundCheckedPressed"] = Rgb(255, 255, 255);
+        var accent = ParseAccent(settings.AccentColor) ?? Windows.UI.Color.FromArgb(255,156,218,155);
+        // Preserve the existing default state's tint steps, translated to the current accent.
+        Windows.UI.Color StateTint(int r,int g,int b) => Windows.UI.Color.FromArgb(255,
+            (byte)Math.Clamp(accent.R+r,0,255),(byte)Math.Clamp(accent.G+g,0,255),(byte)Math.Clamp(accent.B+b,0,255));
+        button.Resources["ToggleButtonBackgroundChecked"] = new SolidColorBrush(accent);
+        button.Resources["ToggleButtonBackgroundCheckedPointerOver"] = new SolidColorBrush(StateTint(-16,-13,-16));
+        button.Resources["ToggleButtonBackgroundCheckedPressed"] = new SolidColorBrush(StateTint(-33,-28,-32));
+        button.Resources["ToggleButtonForegroundChecked"] = Rgb(20, 55, 27);
+        button.Resources["ToggleButtonForegroundCheckedPointerOver"] = Rgb(20, 55, 27);
+        button.Resources["ToggleButtonForegroundCheckedPressed"] = Rgb(20, 55, 27);
         if (tile.Id == "fn") button.Content = MakeFnIcon();
         else button.Content = Glyph(tile.Glyph, 24);
         button.Click += (_, _) => OnTile(tile.Id);
         tileButtons[tile.Id] = button;
-        var label = Text(L.T(tile.LabelKey), 11);
+        var label = Text(L.T(tile.LabelKey), 10.5);
         label.TextAlignment = TextAlignment.Center; label.HorizontalAlignment = HorizontalAlignment.Center; label.MaxLines = 2;
         var panel = new StackPanel { Width = 86, Spacing = 8 };
         panel.Children.Add(button); panel.Children.Add(label);
@@ -678,9 +716,9 @@ public sealed partial class MainWindow : Window
             if (!tileButtons.TryGetValue(id, out var button)) return;
             button.IsEnabled = supported && !preview;
             button.IsChecked = state ?? false;
-            if (button.Content is FontIcon glyph) glyph.Foreground = state == true ? Rgb(255, 255, 255) : Primary;
+            if (button.Content is FontIcon glyph) glyph.Foreground = state == true ? ((ParseAccent(settings.AccentColor).HasValue && !string.Equals(settings.AccentColor,"#9CDA9B",StringComparison.OrdinalIgnoreCase)) ? Rgb(255,255,255) : Rgb(20,55,27)) : Primary;
             if (id == "fn" && button.Content is Grid lockGrid) foreach (var child in lockGrid.Children) {
-                Brush ink = state == true ? Rgb(255, 255, 255) : Primary;
+                Brush ink = state == true ? ((ParseAccent(settings.AccentColor).HasValue && !string.Equals(settings.AccentColor,"#9CDA9B",StringComparison.OrdinalIgnoreCase)) ? Rgb(255,255,255) : Rgb(20,55,27)) : Primary;
                 if (child is Microsoft.UI.Xaml.Shapes.Path path) path.Stroke = ink;
                 if (child is Border outline) outline.BorderBrush = ink;
                 if (child is TextBlock fnLabel) fnLabel.Foreground = ink;
@@ -693,16 +731,19 @@ public sealed partial class MainWindow : Window
         Set("fn", value.FnLocked, value.FnLocked.HasValue, L.T("tip.fn"));
         if (fnSlash != null) fnSlash.Visibility = value.FnLocked == true ? Visibility.Collapsed : Visibility.Visible;
         Set("usb", value.UsbMode == 2, value.UsbMode.HasValue, L.T("tip.usb"));
-        bool exactRates = value.AvailableHz?.Contains(60) == true && value.AvailableHz.Contains(144);
-        Set("refresh", value.RefreshHz == 144, exactRates, exactRates ? L.T("tip.refresh.ok") : L.T("tip.refresh.no"));
+        var panelRates = value.AvailableHz?.OrderBy(x => x).ToArray() ?? [];
+        bool exactRates = panelRates.Length >= 2;
+        Set("refresh", exactRates && value.RefreshHz == panelRates[^1], exactRates, exactRates ? L.T("tip.refresh.ok") : L.T("tip.refresh.no"));
         Set("mic", value.Muted, value.Muted.HasValue, L.T("tip.mic"));
         Set("conserve", value.Mode == ChargeMode.Conservation, value.Mode.HasValue, L.T("tip.conserve"));
         Set("rapid", value.Mode == ChargeMode.Rapid, value.Mode.HasValue, L.T("tip.rapid"));
         Set("touchpad", value.TouchpadLocked, value.TouchpadLocked.HasValue, L.T("tip.touchpad"));
         if (tileButtons.TryGetValue("refresh", out var refreshButton) && refreshButton.Parent is StackPanel panel && panel.Children.Count > 1 && panel.Children[1] is TextBlock label)
-            label.Text = value.RefreshHz.HasValue ? $"{value.RefreshHz} Hz" : "-- Hz";
+            label.Text = exactRates ? $"{panelRates[0]} / {panelRates[^1]} Hz" : value.RefreshHz.HasValue ? $"{value.RefreshHz} Hz" : "-- Hz";
         if (statusText != null) statusText.Text = preview ? L.T("preview") : value.Problems.Length > 0 ? L.T("status.some") : L.T("status.ok");
     }
+
+    void OpenDashboard(){dashboard=new DeviceDashboardWindow(settings.Theme,current,preview);Navigate("device");}
 
     /// <summary>Windows taskbar theme ("Windows mode"), independent of the app's own theme setting. The white glyph vanishes on a light taskbar.</summary>
     internal static bool TaskbarIsLight()
@@ -712,23 +753,58 @@ public sealed partial class MainWindow : Window
     }
     internal static string TrayIconPath() => Path.Combine(AppContext.BaseDirectory, TaskbarIsLight() ? "tray-dark.ico" : "tray-white.ico");
 
+
     string UpdateLabel => L.Ar ? "التحقق من التحديثات" : "Check for updates";
-    Button UpdateButton()
+    UIElement UpdateCard(bool compact = false)
     {
-        var button=new Button { Content=checkingUpdates ? (L.Ar ? "جارٍ التحقق..." : "Checking...") : UpdateLabel, IsEnabled=!checkingUpdates, HorizontalAlignment=HorizontalAlignment.Stretch };
-        button.Click+=async (_,_)=>await CheckForUpdatesAsync();updateButtons.Add(button);return button;
+        var stack = new StackPanel { Spacing=8, HorizontalAlignment=HorizontalAlignment.Stretch };
+        if(!compact) stack.Children.Add(Text(L.Ar ? "التحديثات" : "Updates",16,true));
+        if(!compact) stack.Children.Add(Text(L.Ar ? "اضغط الزر للتحقق من التحديثات الآن." : "Press the button to check for updates now.",13,false,SecondaryText));
+        if(!compact) stack.Children.Add(Text((L.Ar ? "الإصدار الحالي: " : "Current version: ")+"v"+(typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"),13,false,SecondaryText));
+        var buttonsRow=new StackPanel { Orientation=Orientation.Horizontal, Spacing=8 };
+        var button=new Button { Content=UpdateLabel, IsEnabled=!checkingUpdates, HorizontalAlignment=compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left };
+        button.Click+=async (_,_)=>await CheckForUpdatesAsync();updateButtons.Add(button);buttonsRow.Children.Add(button);
+        var install=new Button { Content=L.Ar ? "تنزيل وتثبيت" : "Download and install", HorizontalAlignment=compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left, Visibility=Visibility.Collapsed };
+        install.Click+=(_,_)=>InstallUpdate();installButtons.Add(install);buttonsRow.Children.Add(install);
+        stack.Children.Add(buttonsRow);
+        var result=Text("",13);result.TextWrapping=TextWrapping.Wrap;if(compact) result.TextAlignment=TextAlignment.Center;updateResults.Add(result);stack.Children.Add(result);
+        var link=new HyperlinkButton { Content=L.Ar ? "فتح صفحة التنزيل" : "Open download page", HorizontalAlignment=compact ? HorizontalAlignment.Center : HorizontalAlignment.Left };
+        updateLinks.Add(link);stack.Children.Add(link);RefreshUpdateCards();
+        return compact ? stack : Card(stack,new Thickness(24));
+    }
+    void RefreshUpdateCards()
+    {
+        string installed=typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        string result=manualUpdateState switch {
+            "checking" => L.Ar ? "جارٍ التحقق..." : "Checking...",
+            "available" => L.Ar ? "الإصدار "+manualUpdateVersion+" متاح." : "Version "+manualUpdateVersion+" is available.",
+            "current" => L.Ar ? "أنت على أحدث إصدار (v"+installed+")." : "You're up to date (v"+installed+").",
+            "error" => L.Ar ? "تعذر التحقق من التحديثات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى." : "Couldn't check for updates. Check your internet connection and try again.",
+            _ => ""
+        };
+        foreach(var button in updateButtons){button.IsEnabled=!checkingUpdates;button.Content=UpdateLabel;}
+        foreach(var install in installButtons){install.Content=L.Ar ? "تنزيل وتثبيت" : "Download and install";install.Visibility=manualUpdateAsset==null ? Visibility.Collapsed : Visibility.Visible;}
+        foreach(var text in updateResults)text.Text=result;
+        foreach(var link in updateLinks){link.NavigateUri=manualUpdateUrl==null ? null : new Uri(manualUpdateUrl);link.Visibility=manualUpdateUrl==null ? Visibility.Collapsed : Visibility.Visible;}
     }
     static Version? ReleaseVersion(string? tag) => Version.TryParse(tag?.TrimStart('v','V'),out var version) ? version : null;
-    static string? UpdateDownload(System.Text.Json.JsonElement release, Version installed,bool bundled=true)
+    static string? UpdateDownload(System.Text.Json.JsonElement release, Version installed,bool bundled=true) => UpdateAssetFor(release,installed,bundled)?.Url;
+    internal static UpdateAsset? UpdateAssetFor(System.Text.Json.JsonElement release, Version installed,bool bundled=true)
     {
         if(release.GetProperty("draft").GetBoolean() || release.GetProperty("prerelease").GetBoolean())return null;
         var next=ReleaseVersion(release.GetProperty("tag_name").GetString());
         if(next==null || next<=installed)return null;
         foreach(var asset in release.GetProperty("assets").EnumerateArray()) {
             var name=asset.GetProperty("name").GetString();
-            if(name!=$"FluentVantageToolbar-{next.ToString(3)}-Setup{(bundled ? "-with-dotnet" : "")}.exe")continue;
+            // Accept the current installer name and the pre-0.4.0 legacy name, so older installs can still self-update.
+            if(name!=$"FluentVantageToolbar-v{next.ToString(3)}-installer-win-x64.exe" && name!=$"FluentVantageToolbar-{next.ToString(3)}-Setup{(bundled ? "-with-dotnet" : "")}.exe")continue;
             var url=asset.GetProperty("browser_download_url").GetString();
-            if(Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme=="https" && uri.Host=="github.com" && uri.AbsolutePath.StartsWith("/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/download/",StringComparison.Ordinal))return url;
+            if(Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme=="https" && uri.Host=="github.com" && uri.AbsolutePath.StartsWith("/StarsDust01/Fluent-Vantage-Toolbar/releases/download/",StringComparison.Ordinal)) {
+                long size=asset.TryGetProperty("size",out var sz) && sz.ValueKind==System.Text.Json.JsonValueKind.Number ? sz.GetInt64() : 0;
+                string? sha=null;
+                if(asset.TryGetProperty("digest",out var dg) && dg.ValueKind==System.Text.Json.JsonValueKind.String && (dg.GetString() ?? "").StartsWith("sha256:",StringComparison.OrdinalIgnoreCase))sha=dg.GetString()!.Substring(7);
+                return new UpdateAsset(url!,name!,size,sha);
+            }
         }
         throw new InvalidOperationException("New release has no installer matching this build flavor.");
     }
@@ -753,7 +829,7 @@ public sealed partial class MainWindow : Window
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar/"+(typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            using var response=await http.GetAsync("https://api.github.com/repos/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest",updateLifetime.Token);
+            using var response=await http.GetAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",updateLifetime.Token);
             response.EnsureSuccessStatusCode();
             using var json=System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(updateLifetime.Token));
             var installed=ReleaseVersion(typeof(MainWindow).Assembly.GetName().Version?.ToString(3)) ?? new Version(0,0,0);
@@ -769,7 +845,7 @@ public sealed partial class MainWindow : Window
     void ShowUpdateNotice(string version,UpdateAsset asset)
     {
         try{updateToast?.Close();}catch{}
-        updateToast=new UpdateToast(version.TrimStart('v','V'),asset,"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest",Dark);
+        updateToast=new UpdateToast(version.TrimStart('v','V'),asset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark);
         if(!preview) {
             tray.Notify(L.Ar ? "يتوفر تحديث جديد" : "Update available",$"Fluent Vantage Toolbar {version}");
             updateToast.ShowToast();
@@ -781,7 +857,7 @@ public sealed partial class MainWindow : Window
     {
         if(manualUpdateAsset==null || preview)return;
         try{updateToast?.Close();}catch{}
-        updateToast=new UpdateToast((manualUpdateVersion ?? "").TrimStart('v','V'),manualUpdateAsset,"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest",Dark);
+        updateToast=new UpdateToast((manualUpdateVersion ?? "").TrimStart('v','V'),manualUpdateAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark);
         updateToast.ShowToast();
         updateToast.Begin();
     }
@@ -790,32 +866,25 @@ public sealed partial class MainWindow : Window
     {
         if(checkingUpdates || preview)return;
         checkingUpdates=true;
-        foreach(var button in updateButtons){button.IsEnabled=false;button.Content=L.Ar ? "جارٍ التحقق..." : "Checking...";}
-        string message;
+        manualUpdateState="checking";manualUpdateUrl=null;manualUpdateAsset=null;RefreshUpdateCards();
         try {
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar/"+(typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            using var response=await http.GetAsync("https://api.github.com/repos/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest");
+            using var response=await http.GetAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest");
             response.EnsureSuccessStatusCode();
             using var json=System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var installed=ReleaseVersion(typeof(MainWindow).Assembly.GetName().Version?.ToString(3)) ?? new Version(0,0,0);
-            var url=UpdateDownload(json.RootElement,installed,InstalledBundled);
-            if(url==null)message=L.Ar ? "أنت تستخدم أحدث إصدار." : "You're using the latest release.";
-            else {
-                Process.Start(new ProcessStartInfo(url){UseShellExecute=true});
-                message=L.Ar ? "تم فتح رابط تنزيل التحديث في المتصفح. بعد اكتمال التنزيل، شغّل المثبّت للتحديث." : "Opened the update download in your browser. When the download finishes, run the installer to update.";
-            }
+            manualUpdateAsset=UpdateAssetFor(json.RootElement,installed,InstalledBundled);
+            manualUpdateUrl=manualUpdateAsset?.Url;
+            manualUpdateVersion=json.RootElement.GetProperty("tag_name").GetString();
+            manualUpdateState=manualUpdateUrl==null ? "current" : "available";
         } catch(Exception error) {
             DiagnosticLog.Write("Update check failed: "+error.Message);
-            message=L.Ar ? "تعذّر التحقق من التحديثات أو فتح التنزيل. تحقق من اتصال الإنترنت وحاول مجدداً." : "Couldn't check for updates or open the download. Check your internet connection and try again.";
+            manualUpdateState="error";
         } finally {
-            checkingUpdates=false;foreach(var button in updateButtons){button.IsEnabled=true;button.Content=UpdateLabel;}
+            checkingUpdates=false;if(!exiting)RefreshUpdateCards();
         }
-        if(exiting)return;
-        dialogOpen=true;
-        try { await new ContentDialog { XamlRoot=Root.XamlRoot,Title=UpdateLabel,Content=message,CloseButtonText=L.Ar ? "إغلاق" : "Close" }.ShowAsync(); }
-        finally {dialogOpen=false;}
     }
 
     // ---- settings ----
@@ -824,9 +893,9 @@ public sealed partial class MainWindow : Window
         var stack = new StackPanel { Spacing = 10 };
         stack.Children.Add(Text(L.T("settings.language"), 14, true));
         var language = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        language.Items.Add("العربية"); language.Items.Add("English");
-        language.SelectedIndex = settings.Language == "ar" ? 0 : 1;
-        language.SelectionChanged += (_, _) => { string chosen = language.SelectedIndex == 0 ? "ar" : "en"; if (chosen == settings.Language) return; settings.Language = chosen; settings.Save(); Render(); };
+        foreach (var lg in Extra.Languages) language.Items.Add(lg.name);
+        language.SelectedIndex = Math.Max(0, Array.FindIndex(Extra.Languages, x => x.code == settings.Language));
+        language.SelectionChanged += (_, _) => { if (language.SelectedIndex < 0) return; string chosen = Extra.Languages[language.SelectedIndex].code; if (chosen == settings.Language) return; settings.Language = chosen; settings.Save(); Render(); };
         stack.Children.Add(language);
 
         stack.Children.Add(new TextBlock { Height = 4 });
@@ -837,7 +906,10 @@ public sealed partial class MainWindow : Window
         theme.SelectionChanged += (_, _) => { string chosen = theme.SelectedIndex switch { 1 => "light", 2 => "dark", _ => "system" }; if (chosen == settings.Theme) return; settings.Theme = chosen; settings.Save(); Render(); };
         stack.Children.Add(theme);
         stack.Children.Add(AccentPicker());
-
+        
+        stack.Children.Add(ToggleRow(L.Ar ? "البحث التلقائي عن التحديثات" : "Automatically check for updates",settings.AutoCheckUpdates,on=>{settings.AutoCheckUpdates=on;settings.Save();}));
+        stack.Children.Add(Text(L.Ar ? "بعد 45 ثانية من التشغيل، ثم كل 6 ساعات. التنزيل والتثبيت بقرارك." : "45 seconds after launch, then every 6 hours. Download and install only when you choose.",12,false,SecondaryText));
+        stack.Children.Add(UpdateCard());
 
         stack.Children.Add(new TextBlock { Height = 4 });
         var buttonHeading=new Grid();buttonHeading.ColumnDefinitions.Add(new ColumnDefinition());buttonHeading.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
@@ -868,13 +940,17 @@ public sealed partial class MainWindow : Window
         links.Children.Add(ToggleRow(L.T("battery.link"), settings.ShowBatteryDetails, on => { settings.ShowBatteryDetails = on; settings.Save(); }));
         stack.Children.Add(Card(links, new Thickness(14, 6, 14, 6)));
 
+        stack.Children.Add(Text(L.Ar ? "قفل Fn يبدأ مفعّلاً في الواجهة. القراءة الحالية من النظام غير موثوقة؛ هذه ليست إشارة إلى الحالة الفعلية، ولا يغيّر البرنامج قفل Fn عند بدء التشغيل." : "Fn Lock starts ON in the UI. The current system reading is unreliable; this is an assumption, not a verified hardware state. Startup does not change Fn Lock.", 12, false, SecondaryText));
+        stack.Children.Add(Text(L.T("status.some"), 12, false, SecondaryText));
+        stack.Children.Add(Text(current?.Problems.Length > 0 ? string.Join("\n", current.Problems) : L.T("status.ok"), 12, false, SecondaryText));
+        stack.Children.Add(Text(DiagnosticLog.Path, 11, false, SecondaryText));
+        var logs = new Button { Content = L.Ar ? "فتح سجل التشخيص" : "Open diagnostic log", HorizontalAlignment = HorizontalAlignment.Stretch };
+        logs.Click += (_, _) => OpenUrl(DiagnosticLog.Path);
+        stack.Children.Add(logs);
+        stack.Children.Add(UpdateCard());
         var exit = new Button { Content = L.T("settings.exit"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
-        exit.Click += (_, _) => Close();
+        exit.Click += (_, _) => ExitApp();
         stack.Children.Add(exit);
-        stack.Children.Add(Text(L.Ar ? "التحديثات" : "Updates",14,true));
-        stack.Children.Add(ToggleRow(L.Ar ? "البحث التلقائي عن التحديثات" : "Automatically check for updates",settings.AutoCheckUpdates,on=>{settings.AutoCheckUpdates=on;settings.Save();}));
-        stack.Children.Add(Text(L.Ar ? "بعد 45 ثانية من التشغيل، ثم كل 6 ساعات. التنزيل والتثبيت بقرارك." : "45 seconds after launch, then every 6 hours. Download and install only when you choose.",12,false,SecondaryText));
-        stack.Children.Add(UpdateButton());
         return new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 12, 0) };
     }
 
@@ -901,7 +977,7 @@ public sealed partial class MainWindow : Window
             dragging=Root.CapturePointer(e.Pointer);reorderTrace+=$" captured={dragging};";if(!dragging)return;reordering=true;
             startY=row.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
             shift=new TranslateTransform();row.RenderTransform=shift;row.Opacity=.8;
-            row.BorderBrush=Primary;row.BorderThickness=new Thickness(1);e.Handled=true;
+            row.BorderBrush=new SolidColorBrush(AccentColor);row.BorderThickness=new Thickness(1);e.Handled=true;
         };
         Root.PointerMoved+=(_,e)=>{reorderMoves++;if(!dragging)return;double y=e.GetCurrentPoint(rows).Position.Y;shift!.Y=Math.Clamp(y-startY-row.ActualHeight/2,-startY,Math.Max(0,rows.ActualHeight-startY-row.ActualHeight));e.Handled=true;};
         Root.PointerReleased+=(_,e)=>{reorderReleases++;Finish(true);e.Handled=true;};
@@ -930,14 +1006,13 @@ public sealed partial class MainWindow : Window
             stack.Children.Add(new Border { Width = 120, Height = 120, CornerRadius = new CornerRadius(28), Background = Rgb(32, 32, 32), Child = image, HorizontalAlignment = HorizontalAlignment.Center, Padding = new Thickness(12) });
         }
         catch { }
-        var name = Text("Fluent Legion Toolbar", 22, true); name.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(name);
+        var name = Text("Fluent Vantage Toolbar", 22, true); name.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(name);
         var version = Text(L.T("about.version") + " " + (typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.2.0"), 13, false, SecondaryText); version.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(version);
         var dev = Text(L.T("about.developer"), 14); dev.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(dev);
-        var credit = Text(L.T("about.credit"), 13, false, SecondaryText); credit.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(credit);
+        var contrib = Text(L.T("about.contrib"), 13, false); contrib.HorizontalAlignment = HorizontalAlignment.Center; contrib.TextAlignment = TextAlignment.Center; contrib.TextWrapping = TextWrapping.Wrap; stack.Children.Add(contrib);
+        var credit = new HyperlinkButton { Content=L.T("about.credit"), NavigateUri=new Uri("https://instinct.com"), FontSize=13, HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(credit);
         var note = Text(L.T("about.note"), 12, false, SecondaryText); note.TextAlignment = TextAlignment.Center; note.Margin = new Thickness(8, 12, 8, 0); stack.Children.Add(note);
-        var repo=new HyperlinkButton { Content="GitHub Repo Link",NavigateUri=new Uri("https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar"),HorizontalAlignment=HorizontalAlignment.Center };
-        stack.Children.Add(repo);
-        stack.Children.Add(UpdateButton());
+        stack.Children.Add(UpdateCard(true));
         return new ScrollViewer { Content=stack, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     }
 
@@ -977,7 +1052,7 @@ public sealed partial class MainWindow : Window
         string Number(double? v, string unit) => v.HasValue ? v.Value.ToString("0.0", CultureInfo.InvariantCulture) + unit : na;
         var stack = new StackPanel { Spacing = 14 };
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        var headerIcon = Glyph("\uE83F", 22); headerIcon.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 156, 218, 155));
+        var headerIcon = DashboardIcons.Create("Battery");
         header.Children.Add(headerIcon); header.Children.Add(Text(L.T("bat.header"), 20, true));
         stack.Children.Add(header);
         double? charge = current?.Percent;
@@ -1074,11 +1149,11 @@ public sealed partial class MainWindow : Window
     {
         // Offline decision tests never download or launch an installer during captures.
         string fixture="""
-        {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-9.0.0-Setup.exe","browser_download_url":"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-9.0.0-Setup.exe"},{"name":"FluentVantageToolbar-9.0.0-Setup-with-dotnet.exe","browser_download_url":"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-9.0.0-Setup-with-dotnet.exe"}]}
+        {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-v9.0.0-installer-win-x64.exe","browser_download_url":"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe"}]}
         """;
         using(var test=System.Text.Json.JsonDocument.Parse(fixture)) {
             if(UpdateDownload(test.RootElement,new Version(1,0,0))==null || UpdateDownload(test.RootElement,new Version(9,0,0))!=null || UpdateDownload(test.RootElement,new Version(10,0,0))!=null)throw new InvalidOperationException("Update version comparison failed");
-            if(!UpdateDownload(test.RootElement,new Version(1,0,0),false)!.EndsWith("-Setup.exe") || !UpdateDownload(test.RootElement,new Version(1,0,0),true)!.EndsWith("-Setup-with-dotnet.exe"))throw new InvalidOperationException("Installed update flavor mismatch");
+            if(!UpdateDownload(test.RootElement,new Version(1,0,0),false)!.EndsWith("-installer-win-x64.exe") || !UpdateDownload(test.RootElement,new Version(1,0,0),true)!.EndsWith("-installer-win-x64.exe"))throw new InvalidOperationException("Installed update flavor mismatch");
             if(!new AppSettings().AutoCheckUpdates)throw new InvalidOperationException("Automatic updates must default on");
         }
         foreach(var replacement in new[]{fixture.Replace("\"draft\":false","\"draft\":true"),fixture.Replace("\"prerelease\":false","\"prerelease\":true")}) {
@@ -1093,7 +1168,12 @@ public sealed partial class MainWindow : Window
         if(args.Contains("--tray-capture")) {
             // Real taskbar evidence: report the live shell icon anchor and the icon file this build chose for the current Windows taskbar theme.
             bool anchored=false;int anchorX=0,anchorY=0;
-            for(int attempt=0;attempt<60 && !anchored;attempt++){await Task.Delay(250);anchored=tray.TryGetAnchor(out anchorX,out anchorY);}
+            for(int attempt=0;attempt<320 && !anchored;attempt++) {
+                await Task.Delay(250);
+                anchored=tray.TryGetAnchor(out anchorX,out anchorY);
+                if(!anchored)tray.EnsureAdded();
+                if(attempt%20==19)File.AppendAllText(path+".log",$"attempt {attempt} added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} anchored={anchored} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}\n");
+            }
             if(!anchored)throw new InvalidOperationException("Tray icon anchor unavailable");
             bool light=TaskbarIsLight();
             string chosen=Path.GetFileName(TrayIconPath());
@@ -1104,9 +1184,18 @@ public sealed partial class MainWindow : Window
             await Task.Delay(60000);Close();return;
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".", name = Path.GetFileName(path);
-        current = new DeviceState(60, true, false, ChargeMode.Conservation, false, false, "Visual fixture", [], false, 2, 144, [60, 144]);
+        await geometryReady;await PresentPreparedAsync();SetCloaked(false);flyoutVisible=true;
+        current = new DeviceState(60, true, false, ChargeMode.Conservation, false, false, "Visual fixture", [], true, 2, 165, [60, 165],ThermalMode.Balanced);
         batteryDetails = new BatteryDetails(99.9, 60.0, 59.9, 36, new DateTime(2022, 1, 22), []);
         warranty = new WarrantyResult(new DateTime(2022, 7, 29), new DateTime(2023, 7, 28), null);
+        if(args.Contains("--updates-only")) {
+            int stateIndex=Array.IndexOf(args,"--update-state");manualUpdateState=args[stateIndex+1];checkingUpdates=manualUpdateState=="checking";
+            manualUpdateVersion="v9.0.0";manualUpdateUrl=manualUpdateState=="available" ? "https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
+            manualUpdateAsset=manualUpdateState=="available" ? new UpdateAsset(manualUpdateUrl!,"FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null) : null;
+            view=args.Contains("--updates-settings") ? "settings" : "about";Render();await geometryReady;
+            if(body.Content is ScrollViewer updateScroll)updateScroll.ChangeView(null,args.Contains("--updates-top") ? 0 : updateScroll.ScrollableHeight,null,true);
+            await Task.Delay(700);File.WriteAllText(path+".ready","ready");await Task.Delay(60000);Close();return;
+        }
         foreach (var target in new[] { "main", "settings", "battery", "warranty", "about" })
         {
             view = target; Render(); await geometryReady;
@@ -1114,6 +1203,16 @@ public sealed partial class MainWindow : Window
             await Task.Delay(target == "main" ? 2500 : 1200);
             await SaveImage(target == "main" ? path : Path.Combine(dir, target + "-" + name));
         }
+        foreach(var state in new[] { "current", "available", "checking", "error" }) {
+            manualUpdateState=state;checkingUpdates=state=="checking";manualUpdateVersion="v9.0.0";
+            manualUpdateUrl=state=="available" ? "https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
+            manualUpdateAsset=state=="available" ? new UpdateAsset(manualUpdateUrl!,"FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null) : null;
+            view="about";Render();await geometryReady;
+            if(body.Content is ScrollViewer updateScroll)updateScroll.ChangeView(null,updateScroll.ScrollableHeight,null,true);
+            await Task.Delay(500);
+            await SaveImage(Path.Combine(dir,"updates-"+state+"-"+name));
+        }
+        checkingUpdates=false;manualUpdateState="idle";manualUpdateUrl=null;manualUpdateAsset=null;
         // Verify dynamic height with a single tile row and then with no quick tiles.
         foreach (var count in new[] { 5, 0 }) {
             settings.HiddenTiles = Tiles.Skip(count).Select(t => t.Id).ToList();
@@ -1122,13 +1221,39 @@ public sealed partial class MainWindow : Window
             await Task.Delay(1200);
             await SaveImage(Path.Combine(dir, "tiles" + count + "-" + name));
         }
+        settings.HiddenTiles=Tiles.Where(t=>t.Id!="thermal").Select(t=>t.Id).ToList();
+        foreach(ThermalMode? mode in new ThermalMode?[]{ThermalMode.Quiet,ThermalMode.Balanced,ThermalMode.Performance,null}) {
+            current=current! with { Thermal=mode };view="main";Render();await geometryReady;Apply();
+            if(tileButtons.TryGetValue("thermal",out var thermal))thermal.IsEnabled=mode.HasValue;
+            await Task.Delay(100);await SaveImage(Path.Combine(dir,$"thermal-{mode?.ToString() ?? "unavailable"}-"+name));
+        }
+        current=current! with { Thermal=ThermalMode.Balanced };
         // Every tile-row/link combination must fit without a main-page scroll host.
         foreach(var count in new[]{7,5,0}) foreach(var warrantyVisible in new[]{true,false}) foreach(var detailsVisible in new[]{true,false}) {
             settings.HiddenTiles=Tiles.Skip(count).Select(t=>t.Id).ToList();settings.ShowWarranty=warrantyVisible;settings.ShowBatteryDetails=detailsVisible;
-            view="main";Render();await geometryReady;await Task.Delay(400);
-            if(body.Content is not FrameworkElement main || main.ActualHeight+1<main.DesiredSize.Height)throw new InvalidOperationException("Main panel is clipped for tile/link combination");
+            view="main";Render();await Task.Delay(400);
+            Root.UpdateLayout();
+            if(body.Content is not StackPanel main)throw new InvalidOperationException("Main page must not scroll");
+            foreach(FrameworkElement child in main.Children) {
+                var bottom=child.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,child.ActualHeight)).Y;
+                if(bottom>Root.ActualHeight+1 || child.ActualHeight+1<child.DesiredSize.Height)
+                    throw new InvalidOperationException($"Main child clipped: tiles={count}, warranty={warrantyVisible}, details={detailsVisible}, bottom={bottom}, root={Root.ActualHeight}");
+            }
+            var lastChild=(FrameworkElement)main.Children.Last();
+            var paintedHeight=await PaintedHeightAsync(lastChild);
+            var paintedBottom=lastChild.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,paintedHeight)).Y;
+            if(Math.Abs(Root.ActualHeight-paintedBottom-24)>1)throw new InvalidOperationException($"Main painted gap mismatch: {Root.ActualHeight-paintedBottom}");
+            var pt=lastChild.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0,0));
+            File.AppendAllText(Path.Combine(dir,"layout-"+name+".txt"),$"tiles={count} warranty={warrantyVisible} details={detailsVisible} root={Root.ActualWidth}x{Root.ActualHeight} client={AppWindow.ClientSize.Width}x{AppWindow.ClientSize.Height} canvas={canvas.ActualHeight}/{canvas.DesiredSize.Height} title={titleBar.ActualHeight} body={body.ActualHeight} main={main.ActualHeight}/{main.DesiredSize.Height} inkH={paintedHeight} lastY={pt.Y} lastH={lastChild.ActualHeight}/{lastChild.DesiredSize.Height}\n");
             await SaveImage(Path.Combine(dir,$"main-{count}-warranty{warrantyVisible}-details{detailsVisible}-"+name));
         }
+        // Model names are machine-specific and long names must fit the caption too.
+        foreach(var model in new[]{"LOQ 15IRX9","Legion Pro 7 16IRX10H Long Device Model Name"}) {
+            DeviceInfo.Override=model;settings.HiddenTiles=Tiles.Skip(5).Select(t=>t.Id).ToList();settings.ShowWarranty=false;view="main";Render();await geometryReady;await Task.Delay(400);
+            if(titleBar.ActualHeight+1<titleBar.DesiredSize.Height)throw new InvalidOperationException("Dynamic model header clipped");
+            await SaveImage(Path.Combine(dir,"model-"+(model.StartsWith("LOQ")?"loq":"long")+"-"+name));
+        }
+        DeviceInfo.Override="Legion 5 15ITH6H";
         settings.ShowWarranty=true;settings.ShowBatteryDetails=true;
         settings.HiddenTiles.Clear();
         // Low and critical battery colours.
@@ -1139,15 +1264,45 @@ public sealed partial class MainWindow : Window
             await Task.Delay(1200);
             await SaveImage(Path.Combine(dir, "level" + level + "-" + name));
         }
-        foreach(string accent in new[]{"#0078D4","#744DA9"}) {
+        var devicePreview=new DeviceDashboardWindow(settings.Theme,current,true);
+        dashboard=devicePreview;view="device";Render();await geometryReady;
+        await Task.Delay(1500);
+        devicePreview.AssertPreviewReady();
+        await SaveImage(Path.Combine(dir,"device-"+name));
+        await devicePreview.PreviewPositionAsync(false,true);
+        await SaveImage(Path.Combine(dir,"device-revealed-"+name));
+        await devicePreview.PreviewPositionAsync(true);
+        await SaveImage(Path.Combine(dir,"device-bottom-"+name));
+
+        view="main";settings.HiddenTiles=Tiles.Skip(5).Select(t=>t.Id).ToList();
+        foreach(bool off in new[]{false,true}) {
+            current=current! with { Muted=off,TouchpadLocked=off };Render();await geometryReady;
+            foreach(var button in tileButtons.Values)button.IsEnabled=true;
+            await SaveImage(Path.Combine(dir,$"icons-{(off ? "off" : "on")}-{name}"));
+        }
+        foreach(string accent in new[]{"#00A6A6","#0078D4","#744DA9","#D83B01"}) {
+            settings.AccentColor=accent;current=current! with { Percent=60 };view="main";Render();await geometryReady;
+            if(BatteryColorFor(60)!=Windows.UI.Color.FromArgb(255,156,218,155) || BatteryColorFor(20)!=Windows.UI.Color.FromArgb(255,252,225,0) || BatteryColorFor(5)!=Windows.UI.Color.FromArgb(255,255,153,164))throw new InvalidOperationException("Battery accent or warning thresholds failed");
+            var hoverTile=tileButtons["conserve"];hoverTile.IsEnabled=true;hoverTile.IsChecked=true;
+            var normal=((SolidColorBrush)hoverTile.Resources["ToggleButtonBackgroundChecked"]).Color;
+            var hover=((SolidColorBrush)hoverTile.Resources["ToggleButtonBackgroundCheckedPointerOver"]).Color;
+            if(hover.R!=Math.Max(0,normal.R-16) || hover.G!=Math.Max(0,normal.G-13) || hover.B!=Math.Max(0,normal.B-16))throw new InvalidOperationException("Hover must preserve default tint steps for the current accent");
+            VisualStateManager.GoToState(hoverTile,"Checked",false);await Task.Delay(100);
+            await SaveImage(Path.Combine(dir,$"tile-accent-{accent[1..]}-{name}"));
+            VisualStateManager.GoToState(hoverTile,"CheckedPointerOver",false);await Task.Delay(100);
+            await SaveImage(Path.Combine(dir,$"tile-hover-{accent[1..]}-{name}"));
             settings.AccentColor=accent;view="settings";Render();await geometryReady;await Task.Delay(250);
             await SaveImage(Path.Combine(dir,$"accent-{accent[1..]}-{name}"));
         }
-        settings.AccentColor=null;ApplyAccent();
+        if(body.Content is ScrollViewer settingsScroll) {
+            settingsScroll.ChangeView(null,settingsScroll.ScrollableHeight,null,true);await Task.Delay(250);
+            await SaveImage(Path.Combine(dir,"settings-bottom-"+name));
+        }
+        settings.AccentColor=AppSettings.DefaultAccentColor;ApplyAccent();
         if(ParseAccent("#12ABEF") is not {} parsed || parsed.R!=0x12 || ParseAccent("invalid")!=null)throw new InvalidOperationException("Accent parsing failed");
-        var previewAsset=new UpdateAsset("https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe","FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null);
+        var previewAsset=new UpdateAsset("https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe","FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null);
         foreach(var toastState in new[]{"offer","downloading","ready","error"}) {
-            using(var scope=new UpdateToastCaptureScope(new UpdateToast("9.0.0",previewAsset,"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
+            using(var scope=new UpdateToastCaptureScope(new UpdateToast("9.0.0",previewAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
                 scope.Window.ShowToast();scope.Window.PreviewState(toastState);await Task.Delay(400);
                 var expectedAccent=ParseAccent(AppSettings.DefaultAccentColor)!.Value;
                 if(toastState!="downloading" && scope.Window.PinnedAccentColor()!=expectedAccent)throw new InvalidOperationException("Toast accent button lost the current accent colour");
@@ -1158,11 +1313,11 @@ public sealed partial class MainWindow : Window
             // Runs the real toast against the published release, so the download actually happens and the ready state is real.
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar-ci");
-            using var liveJson=System.Text.Json.JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest"));
+            using var liveJson=System.Text.Json.JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest"));
             var liveAsset=UpdateAssetFor(liveJson.RootElement,new Version(0,3,9),true);
             if(liveAsset==null)throw new InvalidOperationException("Live update preview found no published installer");
             var liveTag=(liveJson.RootElement.GetProperty("tag_name").GetString() ?? "v0.0.0").TrimStart('v','V');
-            using(var scope=new UpdateToastCaptureScope(new UpdateToast(liveTag,liveAsset,"https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
+            using(var scope=new UpdateToastCaptureScope(new UpdateToast(liveTag,liveAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
                 scope.Window.ShowToast();await Task.Delay(400);
                 await scope.Window.CaptureAsync(Path.Combine(dir,"update-toast-live-offer-"+name));
                 scope.Window.Begin();
@@ -1178,31 +1333,57 @@ public sealed partial class MainWindow : Window
             view="main";Render();await geometryReady;
             var phases=Path.Combine(dir,"interactive-phases.txt");
             await VerifyPointerReorderAsync(dir);
-            AppWindow.Hide();
+            await Task.WhenAll(NavigateAsync("settings"),NavigateAsync("battery"),NavigateAsync("about"));
+            await NavigateAsync("main");
+            HideFlyout();
             for(int cycle=0;cycle<3;cycle++) {
                 File.AppendAllText(phases,$"{DateTime.UtcNow:O} open {cycle}\n");
-                ShowFlyout("main",false);await geometryReady;await Task.Delay(500);
+                ShowFlyout("main",false);while(showingFlyout)await Task.Delay(10);await Task.Delay(500);
                 int before=nativeResizeCount;
                 for(int refresh=0;refresh<5;refresh++){Apply();await NextFrameAsync();}
                 if(nativeResizeCount!=before)throw new InvalidOperationException("Unchanged refresh resized the window");
                 File.AppendAllText(phases,$"{DateTime.UtcNow:O} settings {cycle}\n");
-                Navigate("settings");await geometryReady;await Task.Delay(300);
+                await NavigateAsync("settings");await Task.Delay(350);
                 File.AppendAllText(phases,$"{DateTime.UtcNow:O} main {cycle}\n");
-                Navigate("main");await geometryReady;await Task.Delay(350);
+                await NavigateAsync("main");await Task.Delay(350);
                 foreach(string page in new[]{"battery","device","warranty","about"}) {
                     File.AppendAllText(phases,$"{DateTime.UtcNow:O} {page} {cycle}\n");
-                    Navigate(page);await geometryReady;await Task.Delay(350);
+                    await NavigateAsync(page);await Task.Delay(350);
                     File.AppendAllText(phases,$"{DateTime.UtcNow:O} main-from-{page} {cycle}\n");
-                    Navigate("main");await geometryReady;await Task.Delay(350);
+                    await NavigateAsync("main");await Task.Delay(350);
                 }
                 File.AppendAllText(phases,$"{DateTime.UtcNow:O} hide {cycle}\n");
                 HideFlyout();await Task.Delay(250);
             }
+            for(int cycle=0;cycle<20;cycle++) {
+                File.AppendAllText(phases,$"{DateTime.UtcNow:O} reopen-stress {cycle}\n");
+                ShowFlyout("main",false);while(showingFlyout)await Task.Delay(10);
+                if(!flyoutVisible)throw new InvalidOperationException("Reopen was cancelled");
+                await Task.Delay(180);HideFlyout();await Task.Delay(260);
+            }
             File.AppendAllText(phases,$"PASS serialized geometry, three open/settings/main/hide cycles; unchanged refresh native resize count unchanged. Actual DPI={GetDpiForWindow(hwnd)}\n");
         }
-        Close();
+        SetCloaked(true);Close();
     }
 }
+
+static class GridExtensions
+{
+    public static Border WrapInBorder(this Grid grid) => new() { Child = grid };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

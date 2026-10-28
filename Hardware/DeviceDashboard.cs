@@ -18,7 +18,7 @@ internal static class DeviceDashboard
         var identity = new List<DeviceField>();
         Query("Win32_ComputerSystemProduct", "Name,Version,IdentifyingNumber,Vendor", row => {
             serial = Value(row, "IdentifyingNumber"); model = Value(row, "Version"); machine = Value(row, "Name");
-            identity.Add(new("Device", model)); identity.Add(new("Manufacturer", Value(row,"Vendor")));
+            identity.Add(new("Device", DeviceInfo.ValidName(model)?model:DeviceInfo.Name)); identity.Add(new("Manufacturer", Value(row,"Vendor")));
             identity.Add(new("Model", machine)); identity.Add(new("Machine type", machine.Length >= 4 && machine != "Unavailable" ? machine[..4] : "Unavailable"));
         });
         Query("Win32_OperatingSystem", "Caption,Version,OSArchitecture,BuildNumber", row => {
@@ -50,6 +50,7 @@ internal static class DeviceDashboard
                 displayFields.Add(new("Supported rates at this mode",string.Join(" / ",rates)+" Hz"));
             }
         } catch { displayFields.Add(new("Display information","Unavailable")); }
+        if(displayFields.Count==0)displayFields.Add(new("Display information","Unavailable"));
         cards.Add(new("Displays","\uE7F4",displayFields.ToArray()));
         Add("Battery", "\uE83F", "Win32_Battery", "Name,EstimatedChargeRemaining,DesignVoltage,Status", r => [new("Battery",Value(r,"Name")),new("Charge",Value(r,"EstimatedChargeRemaining")+"%"),new("Design voltage",Value(r,"DesignVoltage")+" mV"),new("Status (reported)",Value(r,"Status"))]);
         Add("Network adapters", "\uE839", "Win32_NetworkAdapter", "Name,Manufacturer,MACAddress,NetEnabled,PhysicalAdapter", r => [new("Adapter",Value(r,"Name")),new("Manufacturer",Value(r,"Manufacturer")),new("MAC",Value(r,"MACAddress")),new("Enabled",Value(r,"NetEnabled"))], "PhysicalAdapter=True");
@@ -68,7 +69,7 @@ internal static class DeviceDashboard
         } catch { /* Missing class/provider is not an empty hardware claim. */ }
     }
     static string Value(ManagementObject r,string field) {
-        try { string text=Convert.ToString(r[field],CultureInfo.InvariantCulture)?.Trim()??"";return string.IsNullOrWhiteSpace(text)?"Unavailable":text; }catch{return "Unavailable";}
+        try { string text=Convert.ToString(r[field],CultureInfo.InvariantCulture)?.Trim()??"";return DeviceInfo.ValidName(text)?text:"Unavailable"; }catch{return "Unavailable";}
     }
     static string Date(string value) {try{return ManagementDateTimeConverter.ToDateTime(value).ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);}catch{return "Unavailable";}}
     static string Bytes(ManagementObject r,string field) {try{ulong bytes=Convert.ToUInt64(r[field]);return bytes>0?(bytes/1073741824d).ToString("0.##",CultureInfo.InvariantCulture)+" GiB":"Unavailable";}catch{return "Unavailable";}}

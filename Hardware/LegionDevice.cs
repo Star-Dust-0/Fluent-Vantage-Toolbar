@@ -30,6 +30,8 @@ public sealed class LegionDevice
     }
     bool targetModel;
     bool fnDisplayState = true; // Owner-requested initial UI assumption, not a firmware write.
+    bool fnDisplayState = true; // Owner-requested initial UI assumption, not a firmware write.
+    bool FnInverted => DeviceInfo.FnInverted;
     uint Exchange(uint command, uint ioctl = 0x831020F8)
     {
         lock (driverQueue) {
@@ -94,7 +96,7 @@ public sealed class LegionDevice
         try { locked = ReadTouchpad(); } catch(Exception e) { errors.Add("Touchpad: "+e.Message); }
         try { muted=ReadMicrophone(); } catch(Exception e) { errors.Add("Microphone: "+e.Message); }
         bool? fn=null;int? usb=null,hz=null;int[] rates=[];
-        try { uint settings=Exchange(2,0x831020E8); fn=((settings&1024)!=0) ^ DeviceInfo.FnInverted; } catch(Exception e) { errors.Add("Fn Lock: "+e.Message); }
+        try { uint settings=Exchange(2,0x831020E8); fn=((settings&1024)!=0) ^ FnInverted; } catch(Exception e) { errors.Add("Fn Lock: "+e.Message); }
         try { uint settings=Exchange(2,0x831020E8); usb=(settings&128)==0?0:(settings&32768)!=0?2:1; } catch(Exception e) { errors.Add("USB: "+e.Message); }
         try {(hz,rates)=DisplayControl.Read();}catch(Exception e){errors.Add("Display: "+e.Message);}
         ThermalMode? thermal=null;
@@ -107,7 +109,7 @@ public sealed class LegionDevice
     // No support bit is required first; the query itself succeeding is the capability check. The state is read back with retries.
     public Task SetFnAsync(bool locked) => Task.Run(async () => {
         Exchange(2,0x831020E8);
-        bool hardwareLocked = locked ^ DeviceInfo.FnInverted;
+        bool hardwareLocked = locked ^ FnInverted;
         Exchange(hardwareLocked?14u:15u,0x831020E8);
         for(int i=0;i<10;i++) {
             await Task.Delay(100);

@@ -9,6 +9,9 @@ static class Startup
     public const string BackgroundTask = "FluentLegionToolbar";
     public const string ShowEventName = @"Local\FluentLegionToolbar.Show";
 
+    public const string ExitEventName = @"Local\FluentLegionToolbar.Exit";
+    public static void SignalExit() { try { using var handle=EventWaitHandle.OpenExisting(ExitEventName);handle.Set(); } catch { } }
+
     public static bool IsAdmin()
     {
         try { using var identity = WindowsIdentity.GetCurrent(); return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator); }
@@ -41,3 +44,4 @@ static class Startup
         try { using var handle = EventWaitHandle.OpenExisting(ShowEventName); handle.Set(); } catch { }
     }
 }
+

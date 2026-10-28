@@ -1,0 +1,19 @@
+Fluent Vantage Toolbar third-party notices
+
+This application includes the following third-party packages:
+
+- Microsoft.WindowsAppSDK (1.6.250108002) - MIT License
+  https://github.com/microsoft/WindowsAppSDK
+
+- WindowsDisplayAPI (1.3.0.13) - MIT License
+  https://github.com/falahati/WindowsDisplayAPI
+
+- System.Management (8.0.0) - MIT License
+  https://github.com/dotnet/runtime
+
+- NAudio.Wasapi (2.2.1) - MIT License
+  https://github.com/naudio/NAudio
+
+Machine-type compatibility evidence was consulted from LenovoLegionToolkit
+(GPL-3.0, https://github.com/BartoszCichecki/LenovoLegionToolkit); no code was
+copied.
