@@ -1258,7 +1258,7 @@ public sealed partial class MainWindow : Window
                 if(!anchored)tray.EnsureAdded();
                 if(attempt%20==19)File.AppendAllText(path+".log",$"attempt {attempt} added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} anchored={anchored} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}\n");
             }
-            if(!anchored)throw new InvalidOperationException("Tray icon anchor unavailable");
+            if(!anchored)throw new InvalidOperationException($"Tray icon anchor unavailable added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())} cwd={Environment.CurrentDirectory} logExists={File.Exists(path+".log")}");
             bool light=TaskbarIsLight();
             string chosen=Path.GetFileName(TrayIconPath());
             if(light && chosen!="tray-dark.ico")throw new InvalidOperationException("Light taskbar must get the dark glyph");
