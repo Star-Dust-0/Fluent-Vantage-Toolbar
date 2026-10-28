@@ -12,11 +12,14 @@ A small Windows 11-style toolbar for Lenovo **Legion** and **LOQ** laptops.
 
 </div>
 
-<p align="center">
-  <img src="2-hero-main-taskbar-48cf505e.jpg" width="560" alt="Fluent Vantage Toolbar open above the Windows taskbar on the developer's Legion 5, with green active tiles and descriptive labels">
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="1-hero-light-8d5eba51.jpg" width="490" alt="Main flyout in light theme on the developer's Legion 5, showing battery status and quick settings tiles"></td>
+    <td align="center" width="50%"><img src="2-hero-dark-a551f007.jpg" width="490" alt="Main flyout in dark theme on the developer's Legion 5, showing battery status and quick settings tiles"></td>
+  </tr>
+</table>
 
-<p align="center"><em>Main flyout on a Legion 5 15ITH6H.</em></p>
+<p align="center"><em>Main flyout in light and dark themes on a Legion 5 15ITH6H.</em></p>
 
 ---
 
@@ -24,26 +27,25 @@ A small Windows 11-style toolbar for Lenovo **Legion** and **LOQ** laptops.
 
 Fluent Vantage Toolbar is an independent replacement for the familiar Lenovo Vantage Toolbar.
 
-> "I decided to build a similar Toolbar since Lenovo took this feature down in favor of the creepy widget. I took the concept from the original one, implemented the Windows 11 design language, and made it customizable a bit"
->
-> - Mohamed Elnaggar, developer
+I built this toolbar after Lenovo removed the original feature in favor of its widget. I kept the concept I liked: battery information and quick controls right by the taskbar. Then I brought it into the Windows 11 design language and made the quick controls customizable.
 
-<details>
-<summary><b>The original inspiration: Lenovo Vantage Toolbar</b></summary>
-
-<img src="3-readme-vantage-old-e3a8c4f9.jpg" width="450" alt="The original Lenovo Vantage Toolbar that inspired this independent project">
-
-*The original concept: battery information and everyday controls, within reach of the taskbar. Fluent Vantage Toolbar reimplements the idea in its own code, with Windows 11 styling and customizable controls.*
-
-</details>
+### The original inspiration: Lenovo Vantage Toolbar
 
 Independent project, not an official Lenovo product or a replacement for the full Vantage app.
 
 ## Screenshots
 
-![Battery details, settings and About your device on the developer's Legion 5](1-fluent-vantage-screenshots.jpg)
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="3-settings-accent-76738e5d.jpg" width="420" alt="Toolbar settings showing language, theme, accent color swatches and custom color"></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><img src="4-device-details-d3809785.jpg" width="420" alt="About your device showing CPU and GPU information cards"></td>
+    <td align="center" width="50%"><img src="5-reorder-controls-79b5f67c.jpg" width="420" alt="Main-screen button list with toggles and the Reorder button"></td>
+  </tr>
+</table>
 
-*Screenshots from a Legion 5 15ITH6H running v0.3.0.*
+*Screenshots supplied by the developer from his Legion 5 15ITH6H.*
 
 ## Features
 
@@ -89,6 +91,23 @@ Unavailable hardware data is marked as such. Dedicated GPU memory is not inferre
 
 </details>
 
+### New customization and controls
+
+- **Thermal mode:** read the current mode at startup without changing it, then click to cycle Quiet, Balanced and Performance. Performance requires AC power. The thermal tile replaces Fn Lock in the default layout; Fn Lock remains available in Settings.
+- **Button ordering:** choose **Reorder** in Settings, drag the handles, then choose **Done**. Visibility toggles are disabled while reordering to avoid accidental changes. The order is saved using in-app pointer handling rather than elevated native drag/drop.
+- **Themes and accent colors:** use the system, light or dark theme; choose from six accent presets, select a custom color (including hex input), or restore the default. Custom-accent hover and healthy-battery colors are supported.
+- **Organized Settings and About:** language, theme/accent, buttons, links and diagnostics, with Updates at the bottom. About shows the app version, developer/contributor credits, **GitHub Repo Link** and a manual update check.
+- **In-app updates:** when a newer release exists, the app downloads the matching installer itself with live progress, verifies its size and SHA-256 checksum, and installs only after you press "Install now". The download matches the current build's .NET package type, and the release page is one click away as a fallback. Automatic checks are enabled by default, 45 seconds after launch and every six hours after that; manual checks live in Settings and About.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
+- **Flyout behavior:** restored slide/fade show and hide animation, Mica backdrop and page fade/rise transitions. DWM cloaking avoids blank black frames when reopening from the tray; window resizing remains instant.
+- **Installer improvements:** desktop and Start menu shortcuts, plus shutdown and verification of running toolbar instances before replacing files during upgrades.
+
 ## Compatibility
 
 | Model | Status | Notes |
@@ -130,3 +149,9 @@ The interface offers English, Arabic, French, German, Italian, Spanish, Portugue
 ## Credits
 
 LenovoLegionToolkit was used as a hardware-interface reference, not as copied implementation. Dashboard icons come from Microsoft's MIT-licensed [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). Lenovo, Legion, LOQ and Vantage are trademarks of their owners.
+
+
+
+
+
+

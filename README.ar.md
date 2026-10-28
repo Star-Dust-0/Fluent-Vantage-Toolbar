@@ -4,18 +4,20 @@
 
 أداة شخصية أصلية مبنية باستخدام WinUI 3 وMica لجهاز Lenovo Legion 5 15ITH6H (82JH). يفتح رمز منطقة الإعلام لوحة عائمة بتصميم Windows 11 وأيقونات Segoe Fluent Icons.
 
-<p align="center">
-  <img src="1-2-hero-light-dark-5ea42c74.jpg" width="1000" alt="اللوحة الرئيسية بالسمتين الداكنة والفاتحة مع البطارية والوضع الحراري المتوازن">
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="1-hero-light-8d5eba51.jpg" width="490" alt="اللوحة الرئيسية بالسمة الفاتحة على جهاز Legion 5 الخاص بالمطوّر مع البطارية وأزرار الإعدادات السريعة"></td>
+    <td align="center" width="50%"><img src="2-hero-dark-a551f007.jpg" width="490" alt="اللوحة الرئيسية بالسمة الداكنة على جهاز Legion 5 الخاص بالمطوّر مع البطارية وأزرار الإعدادات السريعة"></td>
+  </tr>
+</table>
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src="2-4-settings-accent-ade6f352.jpg" width="420" alt="إعدادات اللغة والسمة ولون التطبيق"></td>
-    <td align="center" width="50%"><img src="3-5-battery-details-27c90952.jpg" width="420" alt="تفاصيل البطارية والسعة والصحة"></td>
+    <td align="center" width="50%"><img src="3-settings-accent-76738e5d.jpg" width="420" alt="إعدادات الشريط تعرض اللغة والسمة وألوان التمييز واللون المخصص"></td>
   </tr>
   <tr>
-    <td align="center" width="50%"><img src="4-6-device-details-0141a8cf.jpg" width="420" alt="معلومات المعالج والرسوميات"></td>
-    <td align="center" width="50%"><img src="5-7-reorder-controls-5df4fea4.jpg" width="420" alt="ترتيب الأزرار بمقابض السحب وزر تم"></td>
+    <td align="center" width="50%"><img src="4-device-details-d3809785.jpg" width="420" alt="صفحة حول جهازك تعرض بطاقتي المعالج والرسوميات"></td>
+    <td align="center" width="50%"><img src="5-reorder-controls-79b5f67c.jpg" width="420" alt="قائمة أزرار الشاشة الرئيسية مع مفاتيح التبديل وزر ترتيب"></td>
   </tr>
 </table>
 
