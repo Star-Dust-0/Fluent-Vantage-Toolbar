@@ -90,6 +90,7 @@ jobs:
           public class MouseOps {
             [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
             [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+            [DllImport("user32.dll")] public static extern IntPtr FindWindow(string cls, string wnd);
           }
           '@
           function Send-Click($x, $y) {
@@ -129,7 +130,14 @@ jobs:
             Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' SystemUsesLightTheme $v
             Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 4
-            if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 6 }
+            if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
+            # A killed explorer can leave a process without a working shell tray; wait for it.
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            while ([MouseOps]::FindWindow('Shell_TrayWnd', $null) -eq [IntPtr]::Zero -and $sw.Elapsed.TotalSeconds -lt 60) {
+              Start-Sleep -Seconds 1
+              if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
+            }
+            Start-Sleep -Seconds 3
           }
           function Start-TrayApp($path, $guid) {
             if (-not $guid) { $guid = [guid]::NewGuid().ToString('B') }
