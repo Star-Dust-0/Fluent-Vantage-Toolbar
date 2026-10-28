@@ -1,0 +1,169 @@
+name: Tray icon check
+on: [workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  tray:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: microsoft/setup-msbuild@v2
+      - shell: pwsh
+        run: |
+          msbuild FluentLegionToolbar.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=false /p:PublishDir=out/
+          if($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $buildDir=Join-Path $PWD 'bin/x64/Release/net8.0-windows10.0.19041.0/win-x64'
+          Get-ChildItem $buildDir -Recurse -Include *.xbf,*.pri | ForEach-Object {
+            $relative=$_.FullName.Substring($buildDir.Length+1)
+            $destination=Join-Path (Join-Path $PWD 'out') $relative
+            New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+            Copy-Item $_.FullName $destination -Force
+          }
+          Get-ChildItem out -Recurse -Include *.xbf,*.pri | Select-Object FullName,Length
+          if(-not(Test-Path out/MainWindow.xbf)) { throw 'Compiled window XAML missing from published payload' }
+
+          foreach($language in @('english','arabic')) {
+            foreach($theme in @('light','dark')) {
+              Write-Host "CAPTURE BEGIN $language $theme $(Get-Date -Format o)"
+              $arguments=@('--capture',(Join-Path $PWD "$language-$theme.png"),"--$theme")
+              if($language -eq 'arabic') { $arguments += '--arabic' }
+              $p=Start-Process .\out\FluentLegionToolbar.exe -ArgumentList $arguments -PassThru
+              for($attempt=0;$attempt -lt 40;$attempt++) {
+                $p.Refresh()
+                if($p.HasExited) { Get-Content .\out\launch-error.txt -ErrorAction SilentlyContinue; throw "Capture app exited early with $($p.ExitCode)" }
+                if($p.MainWindowHandle -ne 0) { break }
+                Start-Sleep -Milliseconds 250
+              }
+              Add-Type -AssemblyName System.Drawing
+              if(-not ('WindowCaptureBounds' -as [type])) {
+                Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public class WindowCaptureBounds {
+            [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
+          }
+          '@
+              }
+              $p.Refresh()
+              $rect = New-Object WindowCaptureBounds+Rect
+              if($p.MainWindowHandle -ne 0 -and [WindowCaptureBounds]::GetWindowRect($p.MainWindowHandle, [ref]$rect)) {
+                $bitmap = New-Object System.Drawing.Bitmap ($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)
+                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+                $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$bitmap.Size)
+                $bitmap.Save((Join-Path $PWD "window-$language-$theme.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+                $graphics.Dispose(); $bitmap.Dispose()
+              } else { throw 'Actual window screenshot handle unavailable' }
+              if(-not $p.WaitForExit(180000)) { Stop-Process $p.Id -Force; throw 'Capture timeout' }
+              if($p.ExitCode -ne 0 -or -not (Test-Path "$language-$theme.png")) { throw 'Capture failed' }
+              Write-Host "CAPTURE END $language $theme $(Get-Date -Format o)"
+            }
+          }
+      - name: Tray icon on light and dark taskbar
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          function Set-TaskbarTheme($light) {
+            $v = if ($light) { 1 } else { 0 }
+            Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' SystemUsesLightTheme $v
+            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 4
+            if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 6 }
+          }
+          function Capture-Tray($name, $light) {
+            Set-TaskbarTheme $light
+            # Promote the app's stable tray GUID so the glyph sits in the visible tray, not the overflow chevron.
+            $promote = 'HKCU:\Control Panel\NotifyIconSettings\{3F6E2A41-7C5B-4D2E-9A18-5B0C4D7E9F01}'
+            New-Item -Path $promote -Force | Out-Null
+            Set-ItemProperty $promote IsPromoted 1
+            $path = Join-Path $PWD "$name.png"
+            $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--tray-capture' -PassThru
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path "$path.ready") -and -not $p.HasExited -and $clock.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Milliseconds 300; $p.Refresh() }
+            if (-not (Test-Path "$path.ready")) { Stop-Process $p.Id -Force -ErrorAction SilentlyContinue; throw "Tray capture not ready ($name)" }
+            $parts = (Get-Content "$path.anchor") -split ','
+            $ax = [int]$parts[0]; $ay = [int]$parts[1]; $mode = $parts[2]; $icon = $parts[3]
+            "$name anchor=$ax,$ay mode=$mode icon=$icon" | Add-Content tray-proof.txt
+            Start-Sleep -Seconds 2
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bitmap)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $w = [Math]::Min(320, $b.Width); $h = 96
+            $x = [Math]::Max(0, [Math]::Min($ax - $w/2, $b.Width - $w)); $y = [Math]::Max(0, [Math]::Min($ay - $h/2, $b.Height - $h))
+            $crop = $bitmap.Clone([System.Drawing.Rectangle]::new([int]$x, [int]$y, $w, $h), $bitmap.PixelFormat)
+            $crop.Save((Join-Path $PWD "$name-taskbar.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bitmap.Dispose()
+            # Glyph evidence: sample a box around the icon anchor. A dark glyph must contain clearly dark pixels; a white glyph clearly light ones.
+            $minL = 255; $maxL = 0
+            for ($dx = -12; $dx -le 12; $dx += 2) { for ($dy = -12; $dy -le 12; $dy += 2) {
+              $px = $crop.GetPixel([int]($ax - $x + $dx), [int]($ay - $y + $dy))
+              $lum = 0.299*$px.R + 0.587*$px.G + 0.114*$px.B
+              if ($lum -lt $minL) { $minL = $lum }; if ($lum -gt $maxL) { $maxL = $lum }
+            } }
+            $crop.Dispose()
+            "$name minLum=$([int]$minL) maxLum=$([int]$maxL)" | Add-Content tray-proof.txt
+            if (-not ('MouseOps' -as [type])) {
+              Add-Type @'
+using System; using System.Runtime.InteropServices;
+public class MouseOps {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+}
+'@
+            }
+            [MouseOps]::SetCursorPos($ax, $ay) | Out-Null
+            Start-Sleep -Milliseconds 300
+            [MouseOps]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+            [MouseOps]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+            $clickClock = [Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path "$path.interact") -and $clickClock.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 250 }
+            if (-not (Test-Path "$path.interact")) { throw "Tray icon did not receive the click at its reported rect ($name)" }
+            "$name click=delivered" | Add-Content tray-proof.txt
+            Set-Content "$path.done" 'done'
+            if (-not $p.WaitForExit(15000)) { Stop-Process $p.Id -Force -ErrorAction SilentlyContinue }
+            if ($light -and $minL -gt 100) { throw "Light taskbar has no dark tray glyph ($name)" }
+            if (-not $light -and $maxL -lt 180) { throw "Dark taskbar has no white tray glyph ($name)" }
+          }
+          Capture-Tray 'tray-light' $true
+          Capture-Tray 'tray-dark' $false
+          # Unclean-exit reattach: kill an instance without NIM_DELETE, then a fresh instance must
+          # register (ADD or MODIFY fallback), report a rect, and receive a click.
+          $stale = Join-Path $PWD 'tray-stale.png'
+          $p1 = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$stale",'--tray-capture' -PassThru
+          $c1 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.ready") -and -not $p1.HasExited -and $c1.Elapsed.TotalSeconds -lt 100) { Start-Sleep -Milliseconds 300; $p1.Refresh() }
+          if (-not (Test-Path "$stale.ready")) { throw "Stale-phase first instance not ready" }
+          Stop-Process $p1.Id -Force
+          Start-Sleep -Seconds 2
+          Remove-Item "$stale.ready","$stale.anchor" -ErrorAction SilentlyContinue
+          $p2 = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$stale",'--tray-capture' -PassThru
+          $c2 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.ready") -and -not $p2.HasExited -and $c2.Elapsed.TotalSeconds -lt 100) { Start-Sleep -Milliseconds 300; $p2.Refresh() }
+          if (-not (Test-Path "$stale.ready")) { if (Test-Path "$stale.log") { Get-Content "$stale.log" }; throw "Tray icon did not re-register after unclean exit" }
+          $sp = (Get-Content "$stale.anchor") -split ','
+          [MouseOps]::SetCursorPos([int]$sp[0], [int]$sp[1]) | Out-Null
+          Start-Sleep -Milliseconds 300
+          [MouseOps]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+          [MouseOps]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+          $c3 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.interact") -and $c3.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 250 }
+          if (-not (Test-Path "$stale.interact")) { throw "Re-registered tray icon did not receive the click" }
+          "tray-stale reattach=ok click=delivered" | Add-Content tray-proof.txt
+          Set-Content "$stale.done" 'done'
+          if (-not $p2.WaitForExit(15000)) { Stop-Process $p2.Id -Force -ErrorAction SilentlyContinue }
+          Get-Content tray-proof.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tray-check
+          path: |
+            tray-proof.txt
+            tray-light-taskbar.png
+            tray-dark-taskbar.png
+            tray-stale.png.log
+            tray-light.png.log
+            tray-dark.png.log

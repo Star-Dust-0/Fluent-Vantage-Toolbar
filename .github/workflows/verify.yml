@@ -1,0 +1,293 @@
+name: Verify private WinUI build
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  import:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: microsoft/setup-msbuild@v2
+      - shell: pwsh
+        run: |
+          msbuild FluentLegionToolbar.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=false /p:PublishDir=out/
+          if($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $buildDir=Join-Path $PWD 'bin/x64/Release/net8.0-windows10.0.19041.0/win-x64'
+          Get-ChildItem $buildDir -Recurse -Include *.xbf,*.pri | ForEach-Object {
+            $relative=$_.FullName.Substring($buildDir.Length+1)
+            $destination=Join-Path (Join-Path $PWD 'out') $relative
+            New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+            Copy-Item $_.FullName $destination -Force
+          }
+          Get-ChildItem out -Recurse -Include *.xbf,*.pri | Select-Object FullName,Length
+          if(-not(Test-Path out/MainWindow.xbf)) { throw 'Compiled window XAML missing from published payload' }
+
+          foreach($language in @('english','arabic')) {
+            foreach($theme in @('light','dark')) {
+              Write-Host "CAPTURE BEGIN $language $theme $(Get-Date -Format o)"
+              $arguments=@('--capture',(Join-Path $PWD "$language-$theme.png"),"--$theme")
+              if($language -eq 'arabic') { $arguments += '--arabic' }
+              $p=Start-Process .\out\FluentLegionToolbar.exe -ArgumentList $arguments -PassThru
+              for($attempt=0;$attempt -lt 40;$attempt++) {
+                $p.Refresh()
+                if($p.HasExited) { Get-Content .\out\launch-error.txt -ErrorAction SilentlyContinue; throw "Capture app exited early with $($p.ExitCode)" }
+                if($p.MainWindowHandle -ne 0) { break }
+                Start-Sleep -Milliseconds 250
+              }
+              Add-Type -AssemblyName System.Drawing
+              if(-not ('WindowCaptureBounds' -as [type])) {
+                Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public class WindowCaptureBounds {
+            [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
+          }
+          '@
+              }
+              $p.Refresh()
+              $rect = New-Object WindowCaptureBounds+Rect
+              if($p.MainWindowHandle -ne 0 -and [WindowCaptureBounds]::GetWindowRect($p.MainWindowHandle, [ref]$rect)) {
+                $bitmap = New-Object System.Drawing.Bitmap ($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)
+                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+                $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$bitmap.Size)
+                $bitmap.Save((Join-Path $PWD "window-$language-$theme.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+                $graphics.Dispose(); $bitmap.Dispose()
+              } else { throw 'Actual window screenshot handle unavailable' }
+              if(-not $p.WaitForExit(180000)) { Stop-Process $p.Id -Force; throw 'Capture timeout' }
+              if($p.ExitCode -ne 0 -or -not (Test-Path "$language-$theme.png")) { throw 'Capture failed' }
+              Write-Host "CAPTURE END $language $theme $(Get-Date -Format o)"
+            }
+          }
+      - name: Update download end-to-end (real release, nothing installed)
+        shell: pwsh
+        run: |
+          $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--update-e2e' -PassThru -Wait
+          $log = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar\update-e2e.log'
+          if (Test-Path $log) { Get-Content $log; Copy-Item $log update-e2e.log }
+          if ($p.ExitCode -ne 0) { throw "update e2e failed $($p.ExitCode)" }
+      - name: Live update toast download capture
+        shell: pwsh
+        run: |
+          $path = Join-Path $PWD 'update-live.png'
+          $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--update-live','--light' -PassThru
+          if (-not $p.WaitForExit(420000)) { Stop-Process $p.Id -Force; throw 'Live update capture timeout' }
+          if ($p.ExitCode -ne 0) { Get-Content .\out\launch-error.txt -ErrorAction SilentlyContinue; throw "Live update capture failed $($p.ExitCode)" }
+          foreach ($f in @('update-toast-live-offer-update-live.png','update-toast-live-ready-update-live.png')) { if (-not (Test-Path $f)) { throw "Missing live capture $f" } }
+      - name: Tray icon on light and dark taskbar
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          function Set-TaskbarTheme($light) {
+            $v = if ($light) { 1 } else { 0 }
+            Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' SystemUsesLightTheme $v
+            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 4
+            if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 6 }
+          }
+          function Capture-Tray($name, $light) {
+            Set-TaskbarTheme $light
+            # Promote the app's stable tray GUID so the glyph sits in the visible tray, not the overflow chevron.
+            $promote = 'HKCU:\Control Panel\NotifyIconSettings\{3F6E2A41-7C5B-4D2E-9A18-5B0C4D7E9F01}'
+            New-Item -Path $promote -Force | Out-Null
+            Set-ItemProperty $promote IsPromoted 1
+            $path = Join-Path $PWD "$name.png"
+            $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--tray-capture' -PassThru
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path "$path.ready") -and -not $p.HasExited -and $clock.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Milliseconds 300; $p.Refresh() }
+            if (-not (Test-Path "$path.ready")) { Stop-Process $p.Id -Force -ErrorAction SilentlyContinue; throw "Tray capture not ready ($name)" }
+            $parts = (Get-Content "$path.anchor") -split ','
+            $ax = [int]$parts[0]; $ay = [int]$parts[1]; $mode = $parts[2]; $icon = $parts[3]
+            "$name anchor=$ax,$ay mode=$mode icon=$icon" | Add-Content tray-proof.txt
+            Start-Sleep -Seconds 2
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bitmap)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $w = [Math]::Min(320, $b.Width); $h = 96
+            $x = [Math]::Max(0, [Math]::Min($ax - $w/2, $b.Width - $w)); $y = [Math]::Max(0, [Math]::Min($ay - $h/2, $b.Height - $h))
+            $crop = $bitmap.Clone([System.Drawing.Rectangle]::new([int]$x, [int]$y, $w, $h), $bitmap.PixelFormat)
+            $crop.Save((Join-Path $PWD "$name-taskbar.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bitmap.Dispose()
+            # Glyph evidence: sample a box around the icon anchor. A dark glyph must contain clearly dark pixels; a white glyph clearly light ones.
+            $minL = 255; $maxL = 0
+            for ($dx = -12; $dx -le 12; $dx += 2) { for ($dy = -12; $dy -le 12; $dy += 2) {
+              $px = $crop.GetPixel([int]($ax - $x + $dx), [int]($ay - $y + $dy))
+              $lum = 0.299*$px.R + 0.587*$px.G + 0.114*$px.B
+              if ($lum -lt $minL) { $minL = $lum }; if ($lum -gt $maxL) { $maxL = $lum }
+            } }
+            $crop.Dispose()
+            "$name minLum=$([int]$minL) maxLum=$([int]$maxL)" | Add-Content tray-proof.txt
+            if (-not ('MouseOps' -as [type])) {
+              Add-Type @'
+using System; using System.Runtime.InteropServices;
+public class MouseOps {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+}
+'@
+            }
+            [MouseOps]::SetCursorPos($ax, $ay) | Out-Null
+            Start-Sleep -Milliseconds 300
+            [MouseOps]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+            [MouseOps]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+            $clickClock = [Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path "$path.interact") -and $clickClock.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 250 }
+            if (-not (Test-Path "$path.interact")) { throw "Tray icon did not receive the click at its reported rect ($name)" }
+            "$name click=delivered" | Add-Content tray-proof.txt
+            Set-Content "$path.done" 'done'
+            if (-not $p.WaitForExit(15000)) { Stop-Process $p.Id -Force -ErrorAction SilentlyContinue }
+            if ($light -and $minL -gt 100) { throw "Light taskbar has no dark tray glyph ($name)" }
+            if (-not $light -and $maxL -lt 180) { throw "Dark taskbar has no white tray glyph ($name)" }
+          }
+          Capture-Tray 'tray-light' $true
+          Capture-Tray 'tray-dark' $false
+          # Unclean-exit reattach: kill an instance without NIM_DELETE, then a fresh instance must
+          # register (ADD or MODIFY fallback), report a rect, and receive a click.
+          $stale = Join-Path $PWD 'tray-stale.png'
+          $p1 = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$stale",'--tray-capture' -PassThru
+          $c1 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.ready") -and -not $p1.HasExited -and $c1.Elapsed.TotalSeconds -lt 100) { Start-Sleep -Milliseconds 300; $p1.Refresh() }
+          if (-not (Test-Path "$stale.ready")) { throw "Stale-phase first instance not ready" }
+          Stop-Process $p1.Id -Force
+          Start-Sleep -Seconds 2
+          Remove-Item "$stale.ready","$stale.anchor" -ErrorAction SilentlyContinue
+          $p2 = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$stale",'--tray-capture' -PassThru
+          $c2 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.ready") -and -not $p2.HasExited -and $c2.Elapsed.TotalSeconds -lt 100) { Start-Sleep -Milliseconds 300; $p2.Refresh() }
+          if (-not (Test-Path "$stale.ready")) { if (Test-Path "$stale.log") { Get-Content "$stale.log" }; throw "Tray icon did not re-register after unclean exit" }
+          $sp = (Get-Content "$stale.anchor") -split ','
+          [MouseOps]::SetCursorPos([int]$sp[0], [int]$sp[1]) | Out-Null
+          Start-Sleep -Milliseconds 300
+          [MouseOps]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+          [MouseOps]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+          $c3 = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path "$stale.interact") -and $c3.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 250 }
+          if (-not (Test-Path "$stale.interact")) { throw "Re-registered tray icon did not receive the click" }
+          "tray-stale reattach=ok click=delivered" | Add-Content tray-proof.txt
+          Set-Content "$stale.done" 'done'
+          if (-not $p2.WaitForExit(15000)) { Stop-Process $p2.Id -Force -ErrorAction SilentlyContinue }
+          Get-Content tray-proof.txt
+      - name: Upgrade from published v0.4.0 keeps one install and settings
+        shell: pwsh
+        run: |
+          $root = "$env:ProgramFiles\FluentLegionToolbar"
+          Get-Process FluentLegionToolbar -ErrorAction SilentlyContinue | Stop-Process -Force
+          Invoke-WebRequest 'https://github.com/MohamedElnaggar00/Fluent-Vantage-Toolbar/releases/download/v0.4.0/FluentVantageToolbar-v0.4.0-installer-win-x64.exe' -OutFile old-installer.exe
+          $p = Start-Process .\old-installer.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "v0.4.0 install failed $($p.ExitCode)" }
+          $settingsDir = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar'
+          New-Item -ItemType Directory -Force $settingsDir | Out-Null
+          '{"Language":"en","Theme":"dark","AccentColor":"#9CDA9B","AutoCheckUpdates":true,"LastNotifiedUpdate":"v0.4.0","ThermalDefaultLayoutApplied":true,"TileOrder":[],"HiddenTiles":["fn"],"ShowWarranty":true,"ShowBatteryDetails":true}' | Set-Content (Join-Path $settingsDir 'settings.json')
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc installer.iss /DSourceDir=out /DOutName=UpgradeTest /DBundled=1
+          if ($LASTEXITCODE -ne 0) { throw 'Upgrade installer compilation failed' }
+          $p = Start-Process .\installers\UpgradeTest.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Upgrade install failed $($p.ExitCode)" }
+          $entries = @()
+          foreach ($hive in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall')) {
+            $entries += Get-ChildItem $hive -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -like 'Fluent Vantage Toolbar*' }
+          }
+          if ($entries.Count -ne 1) { throw "Expected one install entry after upgrade, found $($entries.Count)" }
+          $version = (Get-ItemProperty $entries[0].PSPath).DisplayVersion
+          "entry=$($entries[0].PSChildName) version=$version" | Add-Content upgrade-proof.txt
+          if ($version -ne '1.0.0') { throw "Upgraded entry version is $version, expected 1.0.0" }
+          if (-not (Test-Path "$root\FluentLegionToolbar.exe")) { throw 'Upgraded app files missing' }
+          if (-not (Test-Path "$root\coreclr.dll")) { throw 'Upgraded install lost the bundled runtime' }
+          $saved = Get-Content (Join-Path $settingsDir 'settings.json') -Raw | ConvertFrom-Json
+          if ($saved.AccentColor -ne '#9CDA9B' -or $saved.Theme -ne 'dark') { throw 'Upgrade wiped user settings' }
+          'settings preserved (accent + theme)' | Add-Content upgrade-proof.txt
+          Get-Content upgrade-proof.txt
+      - name: Capture actual update cards
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          New-Item -ItemType Directory -Force update-desktop | Out-Null
+          foreach($language in @('english','arabic')) { foreach($theme in @('light','dark')) { foreach($state in @('current','available','checking','error')) { foreach($page in @('about','about-top','settings')) {
+            $name="$language-$theme-$state-$page"
+            $path=Join-Path $PWD "update-desktop/$name.png"
+            $arguments=@('--capture',$path,'--updates-only','--update-state',$state,"--$theme")
+            if($language -eq 'arabic'){$arguments+='--arabic'}
+            if($page -eq 'settings'){$arguments+='--updates-settings'}
+            if($page -eq 'about-top'){$arguments+='--updates-top'}
+            $p=Start-Process .\out\FluentLegionToolbar.exe -ArgumentList $arguments -PassThru
+            $clock=[Diagnostics.Stopwatch]::StartNew()
+            while(-not(Test-Path "$path.ready") -and -not $p.HasExited -and $clock.Elapsed.TotalSeconds -lt 30){Start-Sleep -Milliseconds 200;$p.Refresh()}
+            if(-not(Test-Path "$path.ready")){throw 'Update card not ready'}
+            $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap=New-Object System.Drawing.Bitmap $b.Width,$b.Height
+            $g=[System.Drawing.Graphics]::FromImage($bitmap);$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size)
+            $bitmap.Save($path);$g.Dispose();$bitmap.Dispose();Stop-Process $p.Id -Force
+          }}}}
+      - name: Capture actual desktop interactive resize sequences
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          New-Item -ItemType Directory -Force interactive-frames | Out-Null
+          $screen=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          foreach($language in @('english','arabic')) { foreach($theme in @('light','dark')) {
+          $captureDir=Join-Path $PWD "interactive-$language-$theme"
+          New-Item -ItemType Directory -Force $captureDir | Out-Null
+          $framesDir=Join-Path $captureDir 'frames'
+          New-Item -ItemType Directory -Force $framesDir | Out-Null
+          $arguments=@('--capture',"$captureDir/main.png","--$theme",'--interactive')
+          if($language -eq 'arabic') { $arguments += '--arabic' }
+          $p=Start-Process .\out\FluentLegionToolbar.exe -ArgumentList $arguments -PassThru
+          $clock=[Diagnostics.Stopwatch]::StartNew()
+          $n=0
+          while(-not $p.HasExited -and $clock.Elapsed.TotalSeconds -lt 240) {
+            $bitmap=New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
+            $g=[System.Drawing.Graphics]::FromImage($bitmap)
+            $g.CopyFromScreen($screen.X,$screen.Y,0,0,$bitmap.Size)
+            $bitmap.Save((Join-Path $framesDir ('frame-{0:D5}.png' -f $n)),[System.Drawing.Imaging.ImageFormat]::Png)
+            "$n,$($clock.Elapsed.TotalMilliseconds)" | Add-Content (Join-Path $framesDir times.csv)
+            $g.Dispose();$bitmap.Dispose();$n++
+            Start-Sleep -Milliseconds 30
+            $p.Refresh()
+          }
+          if(-not $p.HasExited){Stop-Process $p.Id -Force;throw 'Interactive sequence timed out'}
+          if($p.ExitCode -ne 0){Get-Content out/launch-error.txt -ErrorAction SilentlyContinue;throw 'Interactive sequence failed'}
+          Get-Content (Join-Path $captureDir interactive-phases.txt)
+          }}
+      - name: Verify installer shortcuts without startup task
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc installer.iss /DSourceDir=out /DOutName=ShortcutTest /DBundled=1
+          if($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $destination=Join-Path $env:RUNNER_TEMP 'VantageShortcutTest'
+          $p=Start-Process .\installers\ShortcutTest.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=""',"/DIR=$destination" -Wait -PassThru
+          if($p.ExitCode -ne 0) { throw 'Silent installer failed' }
+          $shell=New-Object -ComObject WScript.Shell
+          foreach($directory in @([Environment]::GetFolderPath('CommonDesktopDirectory'),[Environment]::GetFolderPath('CommonPrograms'))) {
+            $link=Join-Path $directory 'Fluent Vantage Toolbar.lnk'
+            if(-not(Test-Path $link)) { throw "Missing shortcut: $link" }
+            $shortcut=$shell.CreateShortcut($link)
+            if($shortcut.TargetPath -ne (Join-Path $destination 'FluentLegionToolbar.exe') -or $shortcut.Arguments -ne '--show') { throw "Wrong shortcut target: $link" }
+            "$link -> $($shortcut.TargetPath) $($shortcut.Arguments)" | Add-Content installer-shortcuts.txt
+          }
+          Get-Content installer-shortcuts.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: private-test-build-and-captures
+          path: |
+            update-desktop/
+            out/
+            update-e2e.log
+            tray-proof.txt
+            upgrade-proof.txt
+            *-taskbar.png
+            *.png
+            **/layout-*.txt
+            interactive-phases.txt
+            navigation-geometry.csv
+            navigation-native-bounds.csv
+            installer-shortcuts.txt
+            interactive-frames/
+            interactive-*/
+
