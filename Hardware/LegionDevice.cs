@@ -86,7 +86,7 @@ public sealed class LegionDevice
         try
         {
             using var q = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"); using var rows = q.Get();
-            foreach (ManagementObject row in rows) { using(row) { model = Convert.ToString(row["Model"]) ?? model; targetModel = Convert.ToString(row["Manufacturer"])?.Contains("LENOVO", StringComparison.OrdinalIgnoreCase) == true && (model.Contains("82JH") || model.Contains("15ITH6H")); } }
+            foreach (ManagementObject row in rows) { using(row) { model = Convert.ToString(row["Model"]) ?? model; targetModel = DeviceInfo.IsSupported; } }
         } catch (Exception e) { errors.Add(e.Message); targetModel = false; }
         int? percent=null; bool plugged=false, charging=false;
         if (GetSystemPowerStatus(out var power)) { percent = power.Percent <= 100 ? power.Percent : null; plugged = power.AC == 1; charging = power.Flags != 255 && (power.Flags & 8) != 0; }

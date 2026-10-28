@@ -205,7 +205,7 @@ public sealed partial class MainWindow : Window
     {
         reorderMode=true;await NavigateAsync("settings");Render();await geometryReady;
         if(body.Content is ScrollViewer scroll && reorderRows is {} rows) {
-            Root.UpdateLayout();
+            Activate();SetForegroundWindow(hwnd);Root.UpdateLayout();await Task.Delay(150);
             double offset=rows.TransformToVisual((UIElement)scroll.Content).TransformPoint(new Windows.Foundation.Point()).Y;
             scroll.ChangeView(null,Math.Max(0,offset-80),null,true);await Task.Delay(200);
             for(int pass=0;pass<2;pass++) {
@@ -216,10 +216,15 @@ public sealed partial class MainWindow : Window
                 var end=to.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(h.ActualWidth/2,to.ActualHeight/2+(pass==0?12:-12)));
                 if(!GetWindowRect(hwnd,out var rect))throw new InvalidOperationException("Drag bounds unavailable");
                 double scale=GetDpiForWindow(hwnd)/96d;
+                var origin=new NativePoint();ClientToScreen(hwnd,ref origin);rect.Left=origin.X;rect.Top=origin.Y;
+                if(Root.FlowDirection==FlowDirection.RightToLeft){start.X=Root.ActualWidth-start.X;end.X=Root.ActualWidth-end.X;}
                 SetCursorPos(rect.Left+(int)(start.X*scale),rect.Top+(int)(start.Y*scale));mouse_event(2,0,0,0,UIntPtr.Zero);await Task.Delay(120);
-                for(int step=1;step<=12;step++) {SetCursorPos(rect.Left+(int)((start.X+(end.X-start.X)*step/12)*scale),rect.Top+(int)((start.Y+(end.Y-start.Y)*step/12)*scale));await Task.Delay(25);}
+                for(int step=1;step<=12;step++) {mouse_event(0x8001,(uint)((rect.Left+(start.X+(end.X-start.X)*step/12)*scale)*65535/(GetSystemMetrics(0)-1)),(uint)((rect.Top+(start.Y+(end.Y-start.Y)*step/12)*scale)*65535/(GetSystemMetrics(1)-1)),0,UIntPtr.Zero);await Task.Delay(25);}
                 mouse_event(4,0,0,0,UIntPtr.Zero);await Task.Delay(180);
-                if(settings.TileOrder.Count!=Tiles.Length || settings.TileOrder[pass==0?2:0]!=id)throw new InvalidOperationException("Actual pointer reorder did not move expected row");
+                await SaveImage(Path.Combine(dir,$"reorder-attempt-{pass}.png"));
+                File.AppendAllText(Path.Combine(dir,"reorder-input.txt"),$"pass={pass}; start={start}; end={end}; rect={rect.Left},{rect.Top}; pressed={reorderPresses}; moved={reorderMoves}; released={reorderReleases}; order={string.Join(",",settings.TileOrder)}; trace={reorderTrace}
+");
+                if(settings.TileOrder.Count!=Tiles.Length || settings.TileOrder[pass==0?2:0]!=id){Close();throw new InvalidOperationException("Actual pointer reorder did not move expected row");}
                 await SaveImage(Path.Combine(dir,$"reorder-pointer-{pass}.png"));
             }
             string saved=System.Text.Json.JsonSerializer.Serialize(settings);var loaded=System.Text.Json.JsonSerializer.Deserialize<AppSettings>(saved)!;
@@ -316,8 +321,11 @@ public sealed partial class MainWindow : Window
 
     static Windows.UI.Color? ParseAccent(string? hex)
     {
-        if(hex?.Length!=7 || hex[0]!='#' || !uint.TryParse(hex[1..],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out uint rgb))return null;
-        return Windows.UI.Color.FromArgb(255,(byte)(rgb>>16),(byte)(rgb>>8),(byte)rgb);
+        if(hex!=null && hex.Length==7 && hex[0]=='#') {
+            var digits=hex.Substring(1,hex.Length-1);
+            if(uint.TryParse(digits,NumberStyles.HexNumber,CultureInfo.InvariantCulture,out uint rgb))return Windows.UI.Color.FromArgb(255,(byte)(rgb>>16),(byte)(rgb>>8),(byte)rgb);
+        }
+        return null;
     }
     void ApplyAccent()
     {
@@ -459,6 +467,24 @@ public sealed partial class MainWindow : Window
         pageNavigating=true;
         try {
             await geometryReady;view=target;Render();await geometryReady;
+            if(MotionEnabled && flyoutVisible) {
+                var slide=new TranslateTransform{Y=24};
+                body.RenderTransform=slide;
+                var motion=new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+                var done=new TaskCompletionSource<bool>();
+                motion.Completed+=(_,_)=>done.TrySetResult(true);
+                void Add(DependencyObject element,string property,double from,double to) {
+                    var a=new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation{From=from,To=to,Duration=new Duration(TimeSpan.FromMilliseconds(200)),EnableDependentAnimation=true,EasingFunction=new Microsoft.UI.Xaml.Media.Animation.CubicEase{EasingMode=Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut}};
+                    Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(a,element);Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(a,property);motion.Children.Add(a);
+                }
+                Add(slide,"Y",24,0);
+                Add(body,"Opacity",0,1);
+                motion.Begin();
+                await done.Task;
+                motion.Stop();
+                body.Opacity=1;
+                body.RenderTransform=new TranslateTransform();
+            }
             if(target=="battery" && !preview)_ = LoadBatteryAsync();
             if(target=="warranty" && !preview)_ = LoadWarrantyAsync(false);
         } finally {pageNavigating=false;}
@@ -569,15 +595,14 @@ public sealed partial class MainWindow : Window
                 if(AppWindow.Size.Width!=desired.Width || AppWindow.Size.Height!=desired.Height) {
                     AppWindow.Resize(desired);nativeResizeCount++;
                 }
-                await NextFrameAsync();Root.UpdateLayout();await NextFrameAsync();
+                Root.UpdateLayout();await NextFrameAsync();Root.UpdateLayout();await NextFrameAsync();
                 if(!preview && tray!=null && tray.TryGetAnchor(out int x,out int y)) {
                     var area=DisplayArea.GetFromPoint(new PointInt32(x,y),DisplayAreaFallback.Nearest).WorkArea;
                     int left=Math.Clamp(x-AppWindow.Size.Width/2,area.X,Math.Max(area.X,area.X+area.Width-AppWindow.Size.Width));
-                    int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height));
+                    int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height-12));
                     if(AppWindow.Position.X!=left || AppWindow.Position.Y!=top)AppWindow.Move(new PointInt32(left,top));
                 }
             }
-            if(restoreAfterGeometry && generation==geometryGeneration){restoreAfterGeometry=false;AppWindow.Show();}
             if(preview && args.Contains("--interactive")) {
                 if(!GetWindowRect(hwnd,out var actual) || actual.Right-actual.Left!=desired.Width || actual.Bottom-actual.Top!=desired.Height)throw new InvalidOperationException("Native bounds differ from settled content size");
                 var region=CreateRectRgn(0,0,0,0);int kind=GetWindowRgn(hwnd,region);DeleteObject(region);
@@ -778,7 +803,7 @@ public sealed partial class MainWindow : Window
         if(tileButtons.TryGetValue("thermal",out var thermalButton)) {
             thermalButton.Content=ThermalIcon(value.Thermal);
             if(thermalButton.Parent is StackPanel thermalPanel && thermalPanel.Children[1] is TextBlock thermalLabel)
-            thermalLabel.Text=ThermalLabel(value.Thermal);
+            thermalLabel.Text=value.Thermal switch { ThermalMode.Quiet=>L.Ar ? "هادئ" : "Quiet",ThermalMode.Balanced=>L.Ar ? "متوازن" : "Balanced",ThermalMode.Performance=>L.Ar ? "أداء" : "Performance",_=>L.Ar ? "غير متاح" : "Unavailable" };
         }
         Set("fn", value.FnLocked, value.FnLocked.HasValue, L.T("tip.fn"));
         if (fnShackle != null) fnShackle.Data = LockShackle(value.FnLocked == true);
@@ -1065,8 +1090,8 @@ public sealed partial class MainWindow : Window
         var contrib = Text(L.T("about.contrib"), 13, false); contrib.HorizontalAlignment = HorizontalAlignment.Center; contrib.TextAlignment = TextAlignment.Center; contrib.TextWrapping = TextWrapping.Wrap; stack.Children.Add(contrib);
         var credit = new HyperlinkButton { Content=L.T("about.credit"), NavigateUri=new Uri("https://instinct.com"), FontSize=13, HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(credit);
         var note = Text(L.T("about.note"), 12, false, SecondaryText); note.TextAlignment = TextAlignment.Center; note.Margin = new Thickness(8, 12, 8, 0); stack.Children.Add(note);
-        stack.Children.Add(UpdateCard(true));
         stack.Children.Add(new HyperlinkButton { Content="GitHub Repo Link", NavigateUri=new Uri("https://github.com/StarsDust01/Fluent-Vantage-Toolbar"), HorizontalAlignment=HorizontalAlignment.Center });
+        stack.Children.Add(UpdateCard(true));
         return new ScrollViewer { Content=stack, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     }
 
@@ -1233,8 +1258,8 @@ public sealed partial class MainWindow : Window
             string chosen=Path.GetFileName(TrayIconPath());
             if(light && chosen!="tray-dark.ico")throw new InvalidOperationException("Light taskbar must get the dark glyph");
             if(!light && chosen!="tray-white.ico")throw new InvalidOperationException("Dark taskbar must get the white glyph");
+            tray.OnTrayButton = () => { try { File.WriteAllText(path+".interact","clicked"); } catch { } };
             File.WriteAllText(path+".anchor",$"{anchorX},{anchorY},{(light?"light":"dark")},{chosen}");
-            tray.OnTrayButton = () => File.WriteAllText(path+".interact","clicked");
             File.WriteAllText(path+".ready","ready");
             for(int wait=0;wait<440 && !File.Exists(path+".done");wait++) {
                 await Task.Delay(250);
