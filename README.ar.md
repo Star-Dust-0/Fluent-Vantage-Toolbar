@@ -14,6 +14,7 @@
 <table>
   <tr>
     <td align="center" width="50%"><img src="3-settings-accent-76738e5d.jpg" width="420" alt="إعدادات الشريط تعرض اللغة والسمة وألوان التمييز واللون المخصص"></td>
+    <td align="center" width="50%"><img src="6-battery-details-dbcb9a9e.jpg" width="420" alt="تفاصيل البطارية تعرض الشحن والصحة والسعة التصميمية والحالية وعدد الدورات وتاريخ التصنيع"></td>
   </tr>
   <tr>
     <td align="center" width="50%"><img src="4-device-details-d3809785.jpg" width="420" alt="صفحة حول جهازك تعرض بطاقتي المعالج والرسوميات"></td>

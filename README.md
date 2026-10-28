@@ -38,6 +38,7 @@ Independent project, not an official Lenovo product or a replacement for the ful
 <table>
   <tr>
     <td align="center" width="50%"><img src="3-settings-accent-76738e5d.jpg" width="420" alt="Toolbar settings showing language, theme, accent color swatches and custom color"></td>
+    <td align="center" width="50%"><img src="6-battery-details-dbcb9a9e.jpg" width="420" alt="Battery details showing charge, health, design and full charge capacity, cycle count and manufacture date"></td>
   </tr>
   <tr>
     <td align="center" width="50%"><img src="4-device-details-d3809785.jpg" width="420" alt="About your device showing CPU and GPU information cards"></td>
