@@ -223,8 +223,7 @@ public sealed partial class MainWindow : Window
                 for(int step=1;step<=12;step++) {mouse_event(0x8001,(uint)((rect.Left+(start.X+(end.X-start.X)*step/12)*scale)*65535/(GetSystemMetrics(0)-1)),(uint)((rect.Top+(start.Y+(end.Y-start.Y)*step/12)*scale)*65535/(GetSystemMetrics(1)-1)),0,UIntPtr.Zero);await Task.Delay(25);}
                 mouse_event(4,0,0,0,UIntPtr.Zero);await Task.Delay(180);
                 await SaveImage(Path.Combine(dir,$"reorder-attempt-{pass}.png"));
-                File.AppendAllText(Path.Combine(dir,"reorder-input.txt"),$"pass={pass}; start={start}; end={end}; rect={rect.Left},{rect.Top}; pressed={reorderPresses}; moved={reorderMoves}; released={reorderReleases}; order={string.Join(",",settings.TileOrder)}; trace={reorderTrace}
-");
+                File.AppendAllText(Path.Combine(dir,"reorder-input.txt"),$"pass={pass}; start={start}; end={end}; rect={rect.Left},{rect.Top}; pressed={reorderPresses}; moved={reorderMoves}; released={reorderReleases}; order={string.Join(",",settings.TileOrder)}; trace={reorderTrace}\n");
                 if(settings.TileOrder.Count!=Tiles.Length || settings.TileOrder[pass==0?2:0]!=id){Close();throw new InvalidOperationException("Actual pointer reorder did not move expected row");}
                 await SaveImage(Path.Combine(dir,$"reorder-pointer-{pass}.png"));
             }
