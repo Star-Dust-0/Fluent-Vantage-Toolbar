@@ -1,3 +1,5 @@
+<p align="center"><img src="app-icon.png" width="180" alt="أيقونة تطبيق Fluent Vantage Toolbar"></p>
+
 # Fluent Vantage Toolbar (العربية)
 
 [English README](README.md)

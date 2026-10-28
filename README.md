@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="app-icon.png" width="180" alt="Fluent Vantage Toolbar app icon">
+
 # Fluent Vantage Toolbar
 ### Battery status and quick controls for Legion and LOQ
 
