@@ -65,6 +65,8 @@ jobs:
       - name: Update download end-to-end (real release, nothing installed)
         shell: pwsh
         run: |
+          try { Invoke-WebRequest 'https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
+          catch { Write-Host 'SKIP: no published release on this repository yet; the live-update path is exercised on the first run after v1.0.0 publishes.'; exit 0 }
           $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--update-e2e' -PassThru -Wait
           $log = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar\update-e2e.log'
           if (Test-Path $log) { Get-Content $log; Copy-Item $log update-e2e.log }
@@ -72,6 +74,8 @@ jobs:
       - name: Live update toast download capture
         shell: pwsh
         run: |
+          try { Invoke-WebRequest 'https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
+          catch { Write-Host 'SKIP: no published release on this repository yet.'; exit 0 }
           $path = Join-Path $PWD 'update-live.png'
           $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--update-live','--light' -PassThru
           if (-not $p.WaitForExit(420000)) { Stop-Process $p.Id -Force; throw 'Live update capture timeout' }
@@ -201,13 +205,16 @@ jobs:
         run: |
           $root = "$env:ProgramFiles\FluentLegionToolbar"
           Get-Process FluentLegionToolbar -ErrorAction SilentlyContinue | Stop-Process -Force
-          Invoke-WebRequest 'https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v0.4.0/FluentVantageToolbar-v0.4.0-installer-win-x64.exe' -OutFile old-installer.exe
-          $p = Start-Process .\old-installer.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "v0.4.0 install failed $($p.ExitCode)" }
+          # The original v0.4.0 installer is only available in the previous private repository,
+          # so the upgrade baseline is built from this tree with the old version number.
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc installer.iss /DSourceDir=out /DOutName=OldBaseline /DBundled=1 /DAppVersion=0.4.0
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline installer compilation failed' }
+          $p = Start-Process .\installers\OldBaseline.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Baseline install failed $($p.ExitCode)" }
           $settingsDir = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar'
           New-Item -ItemType Directory -Force $settingsDir | Out-Null
           '{"Language":"en","Theme":"dark","AccentColor":"#9CDA9B","AutoCheckUpdates":true,"LastNotifiedUpdate":"v0.4.0","ThermalDefaultLayoutApplied":true,"TileOrder":[],"HiddenTiles":["fn"],"ShowWarranty":true,"ShowBatteryDetails":true}' | Set-Content (Join-Path $settingsDir 'settings.json')
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           & $iscc installer.iss /DSourceDir=out /DOutName=UpgradeTest /DBundled=1
           if ($LASTEXITCODE -ne 0) { throw 'Upgrade installer compilation failed' }
           $p = Start-Process .\installers\UpgradeTest.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru

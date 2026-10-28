@@ -9,7 +9,9 @@
   #define Bundled 0
 #endif
 #define AppName "Fluent Vantage Toolbar"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 
 [Setup]
 AppId={{6B2D0C0E-5A3F-4E0B-9C61-4F1A7E2D9A10}
