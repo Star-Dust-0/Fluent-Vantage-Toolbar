@@ -1316,7 +1316,7 @@ public sealed partial class MainWindow : Window
         // Every tile-row/link combination must fit without a main-page scroll host.
         foreach(var count in new[]{7,5,0}) foreach(var warrantyVisible in new[]{true,false}) foreach(var detailsVisible in new[]{true,false}) {
             settings.HiddenTiles=Tiles.Skip(count).Select(t=>t.Id).ToList();settings.ShowWarranty=warrantyVisible;settings.ShowBatteryDetails=detailsVisible;
-            view="main";Render();await Task.Delay(400);
+            view="main";Render();await geometryReady;await Task.Delay(400);
             Root.UpdateLayout();
             if(body.Content is not StackPanel main)throw new InvalidOperationException("Main page must not scroll");
             foreach(FrameworkElement child in main.Children) {
