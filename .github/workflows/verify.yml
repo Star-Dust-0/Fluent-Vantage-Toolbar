@@ -65,7 +65,7 @@ jobs:
       - name: Update download end-to-end (real release, nothing installed)
         shell: pwsh
         run: |
-          try { Invoke-WebRequest 'https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
+          try { Invoke-WebRequest 'https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
           catch { Write-Host 'SKIP: no published release on this repository yet; the live-update path is exercised on the first run after v1.0.0 publishes.'; exit 0 }
           $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--update-e2e' -PassThru -Wait
           $log = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar\update-e2e.log'
@@ -74,7 +74,7 @@ jobs:
       - name: Live update toast download capture
         shell: pwsh
         run: |
-          try { Invoke-WebRequest 'https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
+          try { Invoke-WebRequest 'https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest' -UseBasicParsing | Out-Null }
           catch { Write-Host 'SKIP: no published release on this repository yet.'; exit 0 }
           $path = Join-Path $PWD 'update-live.png'
           $p = Start-Process .\out\FluentLegionToolbar.exe -ArgumentList '--capture',"$path",'--update-live','--light' -PassThru

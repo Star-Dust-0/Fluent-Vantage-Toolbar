@@ -877,7 +877,7 @@ public sealed partial class MainWindow : Window
             // Accept the current installer name and the pre-0.4.0 legacy name, so older installs can still self-update.
             if(name!=$"FluentVantageToolbar-v{next.ToString(3)}-installer-win-x64.exe" && name!=$"FluentVantageToolbar-{next.ToString(3)}-Setup{(bundled ? "-with-dotnet" : "")}.exe")continue;
             var url=asset.GetProperty("browser_download_url").GetString();
-            if(Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme=="https" && uri.Host=="github.com" && uri.AbsolutePath.StartsWith("/StarsDust01/Fluent-Vantage-Toolbar/releases/download/",StringComparison.Ordinal)) {
+            if(Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme=="https" && uri.Host=="github.com" && uri.AbsolutePath.StartsWith("/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/",StringComparison.Ordinal)) {
                 long size=asset.TryGetProperty("size",out var sz) && sz.ValueKind==System.Text.Json.JsonValueKind.Number ? sz.GetInt64() : 0;
                 string? sha=null;
                 if(asset.TryGetProperty("digest",out var dg) && dg.ValueKind==System.Text.Json.JsonValueKind.String && (dg.GetString() ?? "").StartsWith("sha256:",StringComparison.OrdinalIgnoreCase))sha=dg.GetString()!.Substring(7);
@@ -907,7 +907,7 @@ public sealed partial class MainWindow : Window
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar/"+(typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            using var response=await http.GetAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",updateLifetime.Token);
+            using var response=await http.GetAsync("https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest",updateLifetime.Token);
             response.EnsureSuccessStatusCode();
             using var json=System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(updateLifetime.Token));
             var installed=ReleaseVersion(typeof(MainWindow).Assembly.GetName().Version?.ToString(3)) ?? new Version(0,0,0);
@@ -923,7 +923,7 @@ public sealed partial class MainWindow : Window
     void ShowUpdateNotice(string version,UpdateAsset asset)
     {
         try{updateToast?.Close();}catch{}
-        updateToast=new UpdateToast(version.TrimStart('v','V'),asset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark);
+        updateToast=new UpdateToast(version.TrimStart('v','V'),asset,"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest",Dark);
         if(!preview) {
             tray.Notify(L.Ar ? "يتوفر تحديث جديد" : "Update available",$"Fluent Vantage Toolbar {version}");
             updateToast.ShowToast();
@@ -935,7 +935,7 @@ public sealed partial class MainWindow : Window
     {
         if(manualUpdateAsset==null || preview)return;
         try{updateToast?.Close();}catch{}
-        updateToast=new UpdateToast((manualUpdateVersion ?? "").TrimStart('v','V'),manualUpdateAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark);
+        updateToast=new UpdateToast((manualUpdateVersion ?? "").TrimStart('v','V'),manualUpdateAsset,"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest",Dark);
         updateToast.ShowToast();
         updateToast.Begin();
     }
@@ -949,7 +949,7 @@ public sealed partial class MainWindow : Window
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar/"+(typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"));
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            using var response=await http.GetAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest");
+            using var response=await http.GetAsync("https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest");
             response.EnsureSuccessStatusCode();
             using var json=System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var installed=ReleaseVersion(typeof(MainWindow).Assembly.GetName().Version?.ToString(3)) ?? new Version(0,0,0);
@@ -1088,7 +1088,7 @@ public sealed partial class MainWindow : Window
         var contrib = Text(L.T("about.contrib"), 13, false); contrib.HorizontalAlignment = HorizontalAlignment.Center; contrib.TextAlignment = TextAlignment.Center; contrib.TextWrapping = TextWrapping.Wrap; stack.Children.Add(contrib);
         var credit = new HyperlinkButton { Content=L.T("about.credit"), NavigateUri=new Uri("https://instinct.com"), FontSize=13, HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(credit);
         var note = Text(L.T("about.note"), 12, false, SecondaryText); note.TextAlignment = TextAlignment.Center; note.Margin = new Thickness(8, 12, 8, 0); stack.Children.Add(note);
-        var repo = new HyperlinkButton { Content="GitHub Repo Link", NavigateUri=new Uri("https://github.com/StarsDust01/Fluent-Vantage-Toolbar"), HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(repo);
+        var repo = new HyperlinkButton { Content="GitHub Repo Link", NavigateUri=new Uri("https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar"), HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(repo);
         stack.Children.Add(UpdateCard(true));
         return new ScrollViewer { Content=stack, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     }
@@ -1226,7 +1226,7 @@ public sealed partial class MainWindow : Window
     {
         // Offline decision tests never download or launch an installer during captures.
         string fixture="""
-        {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-v9.0.0-installer-win-x64.exe","browser_download_url":"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe"}]}
+        {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-v9.0.0-installer-win-x64.exe","browser_download_url":"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe"}]}
         """;
         using(var test=System.Text.Json.JsonDocument.Parse(fixture)) {
             if(UpdateDownload(test.RootElement,new Version(1,0,0))==null || UpdateDownload(test.RootElement,new Version(9,0,0))!=null || UpdateDownload(test.RootElement,new Version(10,0,0))!=null)throw new InvalidOperationException("Update version comparison failed");
@@ -1275,7 +1275,7 @@ public sealed partial class MainWindow : Window
         warranty = new WarrantyResult(new DateTime(2022, 7, 29), new DateTime(2023, 7, 28), null);
         if(args.Contains("--updates-only")) {
             int stateIndex=Array.IndexOf(args,"--update-state");manualUpdateState=args[stateIndex+1];checkingUpdates=manualUpdateState=="checking";
-            manualUpdateVersion="v9.0.0";manualUpdateUrl=manualUpdateState=="available" ? "https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
+            manualUpdateVersion="v9.0.0";manualUpdateUrl=manualUpdateState=="available" ? "https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
             manualUpdateAsset=manualUpdateState=="available" ? new UpdateAsset(manualUpdateUrl!,"FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null) : null;
             view=args.Contains("--updates-settings") ? "settings" : "about";Render();await geometryReady;
             if(body.Content is ScrollViewer updateScroll)updateScroll.ChangeView(null,args.Contains("--updates-top") ? 0 : updateScroll.ScrollableHeight,null,true);
@@ -1290,7 +1290,7 @@ public sealed partial class MainWindow : Window
         }
         foreach(var state in new[] { "current", "available", "checking", "error" }) {
             manualUpdateState=state;checkingUpdates=state=="checking";manualUpdateVersion="v9.0.0";
-            manualUpdateUrl=state=="available" ? "https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
+            manualUpdateUrl=state=="available" ? "https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe" : null;
             manualUpdateAsset=state=="available" ? new UpdateAsset(manualUpdateUrl!,"FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null) : null;
             view="about";Render();await geometryReady;
             if(body.Content is ScrollViewer updateScroll)updateScroll.ChangeView(null,updateScroll.ScrollableHeight,null,true);
@@ -1385,9 +1385,9 @@ public sealed partial class MainWindow : Window
         }
         settings.AccentColor=AppSettings.DefaultAccentColor;ApplyAccent();
         if(ParseAccent("#12ABEF") is not {} parsed || parsed.R!=0x12 || ParseAccent("invalid")!=null)throw new InvalidOperationException("Accent parsing failed");
-        var previewAsset=new UpdateAsset("https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe","FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null);
+        var previewAsset=new UpdateAsset("https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe","FluentVantageToolbar-v9.0.0-installer-win-x64.exe",0,null);
         foreach(var toastState in new[]{"offer","downloading","ready","error"}) {
-            using(var scope=new UpdateToastCaptureScope(new UpdateToast("9.0.0",previewAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
+            using(var scope=new UpdateToastCaptureScope(new UpdateToast("9.0.0",previewAsset,"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
                 scope.Window.ShowToast();scope.Window.PreviewState(toastState);await Task.Delay(400);
                 var expectedAccent=ParseAccent(AppSettings.DefaultAccentColor)!.Value;
                 if(toastState!="downloading" && scope.Window.PinnedAccentColor()!=expectedAccent)throw new InvalidOperationException("Toast accent button lost the current accent colour");
@@ -1398,11 +1398,11 @@ public sealed partial class MainWindow : Window
             // Runs the real toast against the published release, so the download actually happens and the ready state is real.
             using var http=new System.Net.Http.HttpClient { Timeout=TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar-ci");
-            using var liveJson=System.Text.Json.JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest"));
+            using var liveJson=System.Text.Json.JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest"));
             var liveAsset=UpdateAssetFor(liveJson.RootElement,new Version(0,3,9),true);
             if(liveAsset==null)throw new InvalidOperationException("Live update preview found no published installer");
             var liveTag=(liveJson.RootElement.GetProperty("tag_name").GetString() ?? "v0.0.0").TrimStart('v','V');
-            using(var scope=new UpdateToastCaptureScope(new UpdateToast(liveTag,liveAsset,"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
+            using(var scope=new UpdateToastCaptureScope(new UpdateToast(liveTag,liveAsset,"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest",Dark))) {
                 scope.Window.ShowToast();await Task.Delay(400);
                 await scope.Window.CaptureAsync(Path.Combine(dir,"update-toast-live-offer-"+name));
                 scope.Window.Begin();

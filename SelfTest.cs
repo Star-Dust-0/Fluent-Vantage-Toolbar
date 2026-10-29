@@ -12,13 +12,13 @@ static class SelfTest
         try
         {
             JsonElement Rel(string json) => JsonDocument.Parse(json).RootElement;
-            string Rj(string tag, bool draft, bool pre, string asset) => "{\"draft\":" + (draft ? "true" : "false") + ",\"prerelease\":" + (pre ? "true" : "false") + ",\"tag_name\":\"" + tag + "\",\"assets\":[{\"name\":\"" + asset + "\",\"browser_download_url\":\"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/" + tag + "/" + asset + "\"}]}";
+            string Rj(string tag, bool draft, bool pre, string asset) => "{\"draft\":" + (draft ? "true" : "false") + ",\"prerelease\":" + (pre ? "true" : "false") + ",\"tag_name\":\"" + tag + "\",\"assets\":[{\"name\":\"" + asset + "\",\"browser_download_url\":\"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/" + tag + "/" + asset + "\"}]}";
             Check("newer stable release gives installer asset", MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "FluentVantageToolbar-v9.0.0-installer-win-x64.exe")), new Version(1, 0, 0)) != null);
             Check("legacy bundled installer name accepted for bundled installs", MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "FluentVantageToolbar-9.0.0-Setup-with-dotnet.exe")), new Version(1, 0, 0), true) != null);
             Check("legacy plain installer name accepted for runtime installs", MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "FluentVantageToolbar-9.0.0-Setup.exe")), new Version(1, 0, 0), false) != null);
             bool legacyRejected = false; try { MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "FluentVantageToolbar-9.0.0-Setup.exe")), new Version(1, 0, 0), true); } catch (InvalidOperationException) { legacyRejected = true; }
             Check("legacy plain installer name rejected for bundled installs", legacyRejected);
-            var withDigest = MainWindow.UpdateAssetFor(Rel("{\"draft\":false,\"prerelease\":false,\"tag_name\":\"v9.0.0\",\"assets\":[{\"name\":\"FluentVantageToolbar-v9.0.0-installer-win-x64.exe\",\"size\":1234,\"digest\":\"sha256:ABCDEF\",\"browser_download_url\":\"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe\"}]}"), new Version(1, 0, 0));
+            var withDigest = MainWindow.UpdateAssetFor(Rel("{\"draft\":false,\"prerelease\":false,\"tag_name\":\"v9.0.0\",\"assets\":[{\"name\":\"FluentVantageToolbar-v9.0.0-installer-win-x64.exe\",\"size\":1234,\"digest\":\"sha256:ABCDEF\",\"browser_download_url\":\"https://github.com/Star-Dust-0/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe\"}]}"), new Version(1, 0, 0));
             Check("update asset carries size and sha256 digest", withDigest != null && withDigest.Size == 1234 && withDigest.Sha256 == "ABCDEF");
             bool foreign = false; try { MainWindow.UpdateAssetFor(Rel("{\"draft\":false,\"prerelease\":false,\"tag_name\":\"v9.0.0\",\"assets\":[{\"name\":\"FluentVantageToolbar-v9.0.0-installer-win-x64.exe\",\"browser_download_url\":\"https://github.com/someone-else/other/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe\"}]}"), new Version(1, 0, 0)); } catch (InvalidOperationException) { foreign = true; }
             Check("foreign repository download url is rejected", foreign);
@@ -50,7 +50,7 @@ static class SelfTest
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.UserAgent.ParseAdd("FluentVantageToolbar-ci");
-            var json = JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/StarsDust01/Fluent-Vantage-Toolbar/releases/latest"));
+            var json = JsonDocument.Parse(await http.GetStringAsync("https://api.github.com/repos/Star-Dust-0/Fluent-Vantage-Toolbar/releases/latest"));
             var asset = MainWindow.UpdateAssetFor(json.RootElement, new Version(0, 3, 9));
             Check("live release offers an installer to 0.3.9", asset != null && asset.Sha256 != null && asset.Size > 1_000_000);
             if (asset == null) return;
