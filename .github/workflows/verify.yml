@@ -214,15 +214,32 @@ jobs:
           Get-Process FluentLegionToolbar -ErrorAction SilentlyContinue | Stop-Process -Force
           # The original v0.4.0 installer is only available in the previous private repository,
           # so the upgrade baseline is built from this tree with the old version number.
+          # The shipped installer bundles the runtime, so the upgrade test publishes
+          # self-contained exactly like release.yml before compiling both installers.
+          msbuild FluentLegionToolbar.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=true /p:WindowsAppSDKSelfContained=true /p:WindowsAppSdkBootstrapInitialize=false /p:DebugType=none /p:PublishDir="$PWD/publish/"
+          if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed' }
+          $buildDir = Join-Path $PWD 'bin/x64/Release/net8.0-windows10.0.19041.0/win-x64'
+          Get-ChildItem $buildDir -Recurse -Include *.xbf,*.pri | ForEach-Object {
+            $relative = $_.FullName.Substring($buildDir.Length+1)
+            $destination = Join-Path (Join-Path $PWD 'publish') $relative
+            New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+            Copy-Item $_.FullName $destination -Force
+          }
+          if (-not (Test-Path publish/MainWindow.xbf)) { throw 'Compiled XAML missing' }
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Microsoft app-local VC runtime not found' }
+          Copy-Item "$($crt.FullName)/*.dll" publish -Force
+          if (-not (Test-Path publish/coreclr.dll)) { throw 'Self-contained publish missing coreclr.dll' }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc installer.iss /DSourceDir=out /DOutName=OldBaseline /DBundled=1 /DAppVersion=0.4.0
+          & $iscc installer.iss /DSourceDir=publish /DOutName=OldBaseline /DBundled=1 /DAppVersion=0.4.0
           if ($LASTEXITCODE -ne 0) { throw 'Baseline installer compilation failed' }
           $p = Start-Process .\installers\OldBaseline.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Baseline install failed $($p.ExitCode)" }
           $settingsDir = Join-Path $env:LOCALAPPDATA 'FluentLegionToolbar'
           New-Item -ItemType Directory -Force $settingsDir | Out-Null
           '{"Language":"en","Theme":"dark","AccentColor":"#9CDA9B","AutoCheckUpdates":true,"LastNotifiedUpdate":"v0.4.0","ThermalDefaultLayoutApplied":true,"TileOrder":[],"HiddenTiles":["fn"],"ShowWarranty":true,"ShowBatteryDetails":true}' | Set-Content (Join-Path $settingsDir 'settings.json')
-          & $iscc installer.iss /DSourceDir=out /DOutName=UpgradeTest /DBundled=1
+          & $iscc installer.iss /DSourceDir=publish /DOutName=UpgradeTest /DBundled=1
           if ($LASTEXITCODE -ne 0) { throw 'Upgrade installer compilation failed' }
           $p = Start-Process .\installers\UpgradeTest.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Upgrade install failed $($p.ExitCode)" }
