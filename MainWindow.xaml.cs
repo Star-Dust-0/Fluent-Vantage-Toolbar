@@ -320,11 +320,10 @@ public sealed partial class MainWindow : Window
 
     static Windows.UI.Color? ParseAccent(string? hex)
     {
-        if(hex!=null && hex.Length==7 && hex[0]=='#') {
-            var digits=hex.Substring(1,hex.Length-1);
-            if(uint.TryParse(digits,NumberStyles.HexNumber,CultureInfo.InvariantCulture,out uint rgb))return Windows.UI.Color.FromArgb(255,(byte)(rgb>>16),(byte)(rgb>>8),(byte)rgb);
-        }
-        return null;
+        if (hex == null || hex.Length != 7 || hex[0] != '#') return null;
+        var digits = hex.Substring(1, hex.Length - 1);
+        if (!uint.TryParse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint rgb)) return null;
+        return Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
     }
     void ApplyAccent()
     {
@@ -814,7 +813,7 @@ public sealed partial class MainWindow : Window
         Set("conserve", value.Mode == ChargeMode.Conservation, value.Mode.HasValue, L.T("tip.conserve"));
         Set("rapid", value.Mode == ChargeMode.Rapid, value.Mode.HasValue, L.T("tip.rapid"));
         Set("touchpad", value.TouchpadLocked.HasValue ? !value.TouchpadLocked.Value : null, value.TouchpadLocked.HasValue, L.T("tip.touchpad"));
-        var checkedInk=ParseAccent(settings.AccentColor).HasValue ? Rgb(255,255,255) : Rgb(20,55,27);
+        var checkedInk=ParseAccent(settings.AccentColor).HasValue && settings.AccentColor.Equals("#9CDA9B",StringComparison.OrdinalIgnoreCase) ? Rgb(20,55,27) : Rgb(255,255,255);
         if(tileButtons.TryGetValue("mic",out var microphone))microphone.Content=value.Muted==true ? MicOffIcon(checkedInk) : Glyph("\uE720",24);
         if(tileButtons.TryGetValue("touchpad",out var pad))pad.Content=TouchpadIcon(value.TouchpadLocked==true,value.TouchpadLocked==false ? checkedInk : Primary);
         if (tileButtons.TryGetValue("refresh", out var refreshButton) && refreshButton.Parent is StackPanel panel && panel.Children.Count > 1 && panel.Children[1] is TextBlock label)
@@ -1089,7 +1088,7 @@ public sealed partial class MainWindow : Window
         var contrib = Text(L.T("about.contrib"), 13, false); contrib.HorizontalAlignment = HorizontalAlignment.Center; contrib.TextAlignment = TextAlignment.Center; contrib.TextWrapping = TextWrapping.Wrap; stack.Children.Add(contrib);
         var credit = new HyperlinkButton { Content=L.T("about.credit"), NavigateUri=new Uri("https://instinct.com"), FontSize=13, HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(credit);
         var note = Text(L.T("about.note"), 12, false, SecondaryText); note.TextAlignment = TextAlignment.Center; note.Margin = new Thickness(8, 12, 8, 0); stack.Children.Add(note);
-        stack.Children.Add(new HyperlinkButton { Content="GitHub Repo Link", NavigateUri=new Uri("https://github.com/StarsDust01/Fluent-Vantage-Toolbar"), HorizontalAlignment=HorizontalAlignment.Center });
+        var repo = new HyperlinkButton { Content="GitHub Repo Link", NavigateUri=new Uri("https://github.com/StarsDust01/Fluent-Vantage-Toolbar"), HorizontalAlignment=HorizontalAlignment.Center }; stack.Children.Add(repo);
         stack.Children.Add(UpdateCard(true));
         return new ScrollViewer { Content=stack, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     }
@@ -1252,7 +1251,7 @@ public sealed partial class MainWindow : Window
                 if(!anchored)tray.EnsureAdded();
                 if(attempt%20==19)File.AppendAllText(path+".log",$"attempt {attempt} added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} anchored={anchored} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}\n");
             }
-            if(!anchored)throw new InvalidOperationException($"Tray icon anchor unavailable added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}");
+            if(!anchored)throw new InvalidOperationException("Tray icon anchor unavailable");
             bool light=TaskbarIsLight();
             string chosen=Path.GetFileName(TrayIconPath());
             if(light && chosen!="tray-dark.ico")throw new InvalidOperationException("Light taskbar must get the dark glyph");
@@ -1374,11 +1373,11 @@ public sealed partial class MainWindow : Window
             var hover=((SolidColorBrush)hoverTile.Resources["ToggleButtonBackgroundCheckedPointerOver"]).Color;
             if(hover.R!=Math.Max(0,normal.R-16) || hover.G!=Math.Max(0,normal.G-13) || hover.B!=Math.Max(0,normal.B-16))throw new InvalidOperationException("Hover must preserve default tint steps for the current accent");
             VisualStateManager.GoToState(hoverTile,"Checked",false);await Task.Delay(100);
-            await SaveImage(Path.Combine(dir,$"tile-accent-{accent[1..]}-{name}"));
+            await SaveImage(Path.Combine(dir,$"tile-accent-{accent.Substring(1,accent.Length-1)}-{name}"));
             VisualStateManager.GoToState(hoverTile,"CheckedPointerOver",false);await Task.Delay(100);
-            await SaveImage(Path.Combine(dir,$"tile-hover-{accent[1..]}-{name}"));
+            await SaveImage(Path.Combine(dir,$"tile-hover-{accent.Substring(1,accent.Length-1)}-{name}"));
             settings.AccentColor=accent;view="settings";Render();await geometryReady;await Task.Delay(250);
-            await SaveImage(Path.Combine(dir,$"accent-{accent[1..]}-{name}"));
+            await SaveImage(Path.Combine(dir,$"accent-{accent.Substring(1,accent.Length-1)}-{name}"));
         }
         if(body.Content is ScrollViewer settingsScroll) {
             settingsScroll.ChangeView(null,settingsScroll.ScrollableHeight,null,true);await Task.Delay(250);
