@@ -1,4 +1,4 @@
-namespace FluentLegionToolbar;
+namespace FluentLegionToolbar.Hardware;
 static class DiagnosticLog
 {
     static readonly object Gate = new();

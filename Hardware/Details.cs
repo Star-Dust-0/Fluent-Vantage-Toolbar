@@ -3,6 +3,7 @@ using System.Management;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FluentLegionToolbar;
 namespace FluentLegionToolbar.Hardware;
 
 public sealed record BatteryDetails(double? HealthPercent, double? DesignWh, double? FullWh, int? Cycles, DateTime? Manufactured, string[] Problems);
@@ -58,11 +59,26 @@ public static class Details
         catch { return null; }
     }
 
+    // Bind cached dates to this machine without storing its serial number in the cache.
+    static string? IdentityKey(string machineType,string serial) =>
+        DeviceInfo.ValidName(serial)?Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(machineType.Trim()+"|"+serial.Trim()))):null;
+    static string? CurrentIdentityKey()
+    {
+        try {
+            using var search=new ManagementObjectSearcher("SELECT Name, IdentifyingNumber FROM Win32_ComputerSystemProduct");
+            using var rows=search.Get();foreach(ManagementObject row in rows)using(row)return IdentityKey(Convert.ToString(row["Name"])??"",Convert.ToString(row["IdentifyingNumber"])??"");
+        }catch{}
+        return null;
+    }
     static string CachePath => Path.Combine(AppSettings.Folder, "warranty.json");
-
+    sealed record WarrantyCache(string Identity, WarrantyResult Result);
     public static WarrantyResult? ReadCachedWarranty()
     {
-        try { return File.Exists(CachePath) ? JsonSerializer.Deserialize<WarrantyResult>(File.ReadAllText(CachePath)) : null; } catch { return null; }
+        try {
+            var key=CurrentIdentityKey();if(key==null || !File.Exists(CachePath))return null;
+            var cache=JsonSerializer.Deserialize<WarrantyCache>(File.ReadAllText(CachePath));
+            return cache?.Identity==key?cache.Result:null;
+        }catch{return null;}
     }
 
     public static async Task<WarrantyResult?> FetchWarrantyAsync()
@@ -74,7 +90,7 @@ public static class Details
             using var rows = search.Get();
             foreach (ManagementObject row in rows) { using (row) { machineType = Convert.ToString(row["Name"]) ?? ""; serial = Convert.ToString(row["IdentifyingNumber"]) ?? ""; } }
         });
-        if (serial.Length == 0) return null;
+        if (!DeviceInfo.ValidName(serial)) return null;
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
         var body = new StringContent(JsonSerializer.Serialize(new { serialNumber = serial, machineType }), System.Text.Encoding.UTF8, "application/json");
@@ -97,7 +113,8 @@ public static class Details
         }
         catch { }
         var result = new WarrantyResult(starts.Count > 0 ? starts.Min() : null, ends.Count > 0 ? ends.Max() : null, link);
-        try { Directory.CreateDirectory(AppSettings.Folder); File.WriteAllText(CachePath, JsonSerializer.Serialize(result)); } catch { }
+        try { Directory.CreateDirectory(AppSettings.Folder); File.WriteAllText(CachePath, JsonSerializer.Serialize(new WarrantyCache(IdentityKey(machineType,serial)!,result))); } catch { }
         return result;
     }
 }
+

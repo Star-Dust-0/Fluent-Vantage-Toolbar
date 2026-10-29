@@ -1,3 +1,4 @@
+using FluentLegionToolbar.Hardware;
 using Microsoft.UI.Xaml;
 namespace FluentLegionToolbar;
 public partial class App : Application
@@ -16,6 +17,10 @@ public partial class App : Application
         try
         {
             var a = Environment.GetCommandLineArgs();
+            if(a.Contains("--shutdown")){Startup.SignalExit();Environment.Exit(0);return;}
+            if(a.Contains("--update-e2e")){SelfTest.RunUpdateE2E();return;}
+            int gi = Array.IndexOf(a,"--tray-guid");
+            if(gi>=0 && gi+1<a.Length && Guid.TryParse(a[gi+1],out var overrideGuid))TrayIcon.OverrideGuid = overrideGuid;
             bool capture = a.Contains("--capture"), background = a.Contains("--background");
             if (!capture)
             {

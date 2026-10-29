@@ -255,6 +255,8 @@ sealed class UpdateToast : Window
         await encoder.FlushAsync();
     }
 
+
+
     public void ShowToast()
     {
         var wa = DisplayArea.Primary.WorkArea;

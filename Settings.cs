@@ -4,13 +4,15 @@ namespace FluentLegionToolbar;
 
 public sealed class AppSettings
 {
-    public string Language { get; set; } = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ar" ? "ar" : "en";
+    public string Language { get; set; } = "en";
     public string Theme { get; set; } = "system";
-    public string? AccentColor { get; set; }
+    public const string DefaultAccentColor = "#00A6A6";
+    public string? AccentColor { get; set; } = DefaultAccentColor;
     public bool AutoCheckUpdates { get; set; } = true;
     public string? LastNotifiedUpdate { get; set; }
+    public bool ThermalDefaultLayoutApplied { get; set; } = true;
     public List<string> TileOrder { get; set; } = new();
-    public List<string> HiddenTiles { get; set; } = new();
+    public List<string> HiddenTiles { get; set; } = new() { "fn", "usb", "refresh" };
     public bool ShowWarranty { get; set; } = true;
     public bool ShowBatteryDetails { get; set; } = true;
 
@@ -27,6 +29,7 @@ public sealed class AppSettings
                 if(!loaded.HiddenTiles.Contains("fn"))loaded.HiddenTiles.Add("fn");
                 loaded.ThermalDefaultLayoutApplied=true;loaded.Save();
             }
+            loaded.AccentColor ??= DefaultAccentColor;
             return loaded;
         }} catch { }
         return new();
@@ -44,3 +47,4 @@ public sealed class AppSettings
         if (!visible) HiddenTiles.Add(id);
     }
 }
+

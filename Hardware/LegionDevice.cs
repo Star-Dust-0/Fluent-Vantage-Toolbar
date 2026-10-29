@@ -30,10 +30,11 @@ public sealed class LegionDevice
     }
     bool targetModel;
     bool fnDisplayState = true; // Owner-requested initial UI assumption, not a firmware write.
+    bool FnInverted => DeviceInfo.FnInverted;
     uint Exchange(uint command, uint ioctl = 0x831020F8)
     {
         lock (driverQueue) {
-        if (!targetModel) throw new InvalidOperationException("This device is not the expected Lenovo 82JH / 15ITH6H.");
+        if (!targetModel) throw new InvalidOperationException("This device is not a recognised Lenovo Legion model, so hardware writes are disabled.");
         using var h = CreateFile(@"\\.\EnergyDrv", 3, 3, IntPtr.Zero, 3, 0x80, IntPtr.Zero);
         if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
         bool success = DeviceIoControl(h, ioctl, ref command, 4, out uint response, 4, out uint returned, IntPtr.Zero);
@@ -58,7 +59,7 @@ public sealed class LegionDevice
     }
     int Touchpad(string method, int? input = null)
     {
-        if (!targetModel) throw new InvalidOperationException("Not the expected Legion model.");
+        if (!targetModel) throw new InvalidOperationException("This device is not a recognised Lenovo Legion model.");
         using var search = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM LENOVO_GAMEZONE_DATA");
         using var rows = search.Get();
         var instance = rows.Cast<ManagementObject>().FirstOrDefault() ?? throw new InvalidOperationException("Lenovo WMI provider is unavailable.");
@@ -85,7 +86,7 @@ public sealed class LegionDevice
         try
         {
             using var q = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"); using var rows = q.Get();
-            foreach (ManagementObject row in rows) { using(row) { model = Convert.ToString(row["Model"]) ?? model; targetModel = Convert.ToString(row["Manufacturer"])?.Contains("LENOVO", StringComparison.OrdinalIgnoreCase) == true && (model.Contains("82JH") || model.Contains("15ITH6H")); } }
+            foreach (ManagementObject row in rows) { using(row) { model = Convert.ToString(row["Model"]) ?? model; targetModel = DeviceInfo.IsSupported; } }
         } catch (Exception e) { errors.Add(e.Message); targetModel = false; }
         int? percent=null; bool plugged=false, charging=false;
         if (GetSystemPowerStatus(out var power)) { percent = power.Percent <= 100 ? power.Percent : null; plugged = power.AC == 1; charging = power.Flags != 255 && (power.Flags & 8) != 0; }
@@ -94,7 +95,7 @@ public sealed class LegionDevice
         try { locked = ReadTouchpad(); } catch(Exception e) { errors.Add("Touchpad: "+e.Message); }
         try { muted=ReadMicrophone(); } catch(Exception e) { errors.Add("Microphone: "+e.Message); }
         bool? fn=null;int? usb=null,hz=null;int[] rates=[];
-        try { uint settings=Exchange(2,0x831020E8); fn=((settings&1024)!=0) ^ DeviceInfo.FnInverted; } catch(Exception e) { errors.Add("Fn Lock: "+e.Message); }
+        try { uint settings=Exchange(2,0x831020E8); fn=((settings&1024)!=0) ^ FnInverted; } catch(Exception e) { errors.Add("Fn Lock: "+e.Message); }
         try { uint settings=Exchange(2,0x831020E8); usb=(settings&128)==0?0:(settings&32768)!=0?2:1; } catch(Exception e) { errors.Add("USB: "+e.Message); }
         try {(hz,rates)=DisplayControl.Read();}catch(Exception e){errors.Add("Display: "+e.Message);}
         ThermalMode? thermal=null;
@@ -107,7 +108,7 @@ public sealed class LegionDevice
     // No support bit is required first; the query itself succeeding is the capability check. The state is read back with retries.
     public Task SetFnAsync(bool locked) => Task.Run(async () => {
         Exchange(2,0x831020E8);
-        bool hardwareLocked = locked ^ DeviceInfo.FnInverted;
+        bool hardwareLocked = locked ^ FnInverted;
         Exchange(hardwareLocked?14u:15u,0x831020E8);
         for(int i=0;i<10;i++) {
             await Task.Delay(100);

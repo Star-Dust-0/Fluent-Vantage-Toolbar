@@ -1,7 +1,7 @@
 # Registers Fluent Legion Toolbar to start at logon with administrator rights and without a UAC prompt.
 # Run this file once. It asks for administrator approval once, then never again.
-param([switch]\$Silent)
-\$ErrorActionPreference = 'Stop'
+param([switch]$Silent)
+$ErrorActionPreference = 'Stop'
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$PSCommandPath`""
     exit
