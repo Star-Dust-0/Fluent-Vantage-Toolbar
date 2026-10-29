@@ -34,7 +34,7 @@ public sealed class LegionDevice
     uint Exchange(uint command, uint ioctl = 0x831020F8)
     {
         lock (driverQueue) {
-        if (!targetModel) throw new InvalidOperationException("This device is not the expected Lenovo 82JH / 15ITH6H.");
+        if (!targetModel) throw new InvalidOperationException("This device is not a recognised Lenovo Legion model, so hardware writes are disabled.");
         using var h = CreateFile(@"\\.\EnergyDrv", 3, 3, IntPtr.Zero, 3, 0x80, IntPtr.Zero);
         if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
         bool success = DeviceIoControl(h, ioctl, ref command, 4, out uint response, 4, out uint returned, IntPtr.Zero);
@@ -59,7 +59,7 @@ public sealed class LegionDevice
     }
     int Touchpad(string method, int? input = null)
     {
-        if (!targetModel) throw new InvalidOperationException("Not the expected Legion model.");
+        if (!targetModel) throw new InvalidOperationException("This device is not a recognised Lenovo Legion model.");
         using var search = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM LENOVO_GAMEZONE_DATA");
         using var rows = search.Get();
         var instance = rows.Cast<ManagementObject>().FirstOrDefault() ?? throw new InvalidOperationException("Lenovo WMI provider is unavailable.");
