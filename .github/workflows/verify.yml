@@ -91,6 +91,7 @@ jobs:
             [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
             [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
             [DllImport("user32.dll")] public static extern IntPtr FindWindow(string cls, string wnd);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, string l, uint f, uint t, out IntPtr r);
           }
           '@
           function Send-Click($x, $y) {
@@ -128,16 +129,12 @@ jobs:
           function Set-TaskbarTheme($light) {
             $v = if ($light) { 1 } else { 0 }
             Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' SystemUsesLightTheme $v
-            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+            # Broadcast the theme change instead of restarting explorer: the taskbar follows
+            # ImmersiveColorSet live, and a killed explorer can come back with a tray that
+            # rejects NIM_ADD (E_FAIL), breaking every later tray registration on the runner.
+            $r = [IntPtr]::Zero
+            [MouseOps]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [IntPtr]::Zero, 'ImmersiveColorSet', 2, 5000, [ref]$r) | Out-Null
             Start-Sleep -Seconds 4
-            if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
-            # A killed explorer can leave a process without a working shell tray; wait for it.
-            $sw = [Diagnostics.Stopwatch]::StartNew()
-            while ([MouseOps]::FindWindow('Shell_TrayWnd', $null) -eq [IntPtr]::Zero -and $sw.Elapsed.TotalSeconds -lt 60) {
-              Start-Sleep -Seconds 1
-              if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
-            }
-            Start-Sleep -Seconds 3
           }
           function Start-TrayApp($path, $guid) {
             if (-not $guid) { $guid = [guid]::NewGuid().ToString('B') }
