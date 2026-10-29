@@ -138,13 +138,12 @@ public sealed partial class MainWindow : Window
         tray.OnSystemThemeChanged=()=>tray.SetIcon(TrayIconPath());
         tray.NativeTip = true; tray.SetTip("Fluent Vantage Toolbar");
         AppWindow.Closing += (_, e) => { if (!exiting && !preview) { e.Cancel = true; HideFlyout(); } };
-        Closed += (_, _) => { updateLifetime.Cancel();try{updateToast?.Close();}catch{}contextMenu?.Close();timer.Stop(); tray.Dispose(); Diag("disposed\n"); };
+        Closed += (_, _) => { updateLifetime.Cancel();try{updateToast?.Close();}catch{}contextMenu?.Close();timer.Stop(); tray.Dispose(); };
         Activated += (_, e) => { if (e.WindowActivationState == WindowActivationState.Deactivated && !preview && !dialogOpen && !pageNavigating && !showingFlyout && !reordering) HideFlyout(); };
         Root.ActualThemeChanged += (_, _) => { if (!preview) Render(); };
         timer.Tick += async (_, _) => { if (flyoutVisible && view == "main") await Refresh(); };
         Root.SizeChanged += (_, _) => DiagnosticLog.Write($"Layout dpi={GetDpiForWindow(hwnd)} outer={AppWindow.Size.Width}x{AppWindow.Size.Height} client={AppWindow.ClientSize.Width}x{AppWindow.ClientSize.Height} root={Root.ActualWidth}x{Root.ActualHeight} canvas={canvas.ActualWidth}x{canvas.ActualHeight}");
-        Root.Loaded += async (_, _) => { if (preview) { Diag("loaded\n"); await Capture(); } };
-        if(preview)Diag("ctor\n");
+        Root.Loaded += async (_, _) => { if (preview) { await Capture(); } };
 
         Render();
         if (!preview)
@@ -1224,11 +1223,8 @@ public sealed partial class MainWindow : Window
         await encoder.FlushAsync();
     }
 
-    public static string? TrayDiag;
-    static void Diag(string line) { if(TrayDiag!=null) { try { File.AppendAllText(TrayDiag, line); } catch { } } }
     async Task Capture()
     {
-        Diag("capture\n");
         // Offline decision tests never download or launch an installer during captures.
         string fixture="""
         {"draft":false,"prerelease":false,"tag_name":"v9.0.0","assets":[{"name":"FluentVantageToolbar-v9.0.0-installer-win-x64.exe","browser_download_url":"https://github.com/StarsDust01/Fluent-Vantage-Toolbar/releases/download/v9.0.0/FluentVantageToolbar-v9.0.0-installer-win-x64.exe"}]}
@@ -1247,9 +1243,7 @@ public sealed partial class MainWindow : Window
         if(!unknownRejected)throw new InvalidOperationException("Unknown thermal mode accepted");
         // Deterministic render fixture, clearly labelled as preview. Hardware services and the network are never called.
         int index = Array.IndexOf(args, "--capture"); string path = args[index + 1];
-        Diag("tests\n");
         if(args.Contains("--tray-capture")) {
-            Diag("traybranch\n");
             // Real taskbar evidence: report the live shell icon anchor and the icon file this build chose for the current Windows taskbar theme.
             bool anchored=false;int anchorX=0,anchorY=0;
             for(int attempt=0;attempt<320 && !anchored;attempt++) {
@@ -1258,7 +1252,7 @@ public sealed partial class MainWindow : Window
                 if(!anchored)tray.EnsureAdded();
                 if(attempt%20==19)File.AppendAllText(path+".log",$"attempt {attempt} added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} anchored={anchored} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}\n");
             }
-            if(!anchored)throw new InvalidOperationException($"Tray icon anchor unavailable added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())} cwd={Environment.CurrentDirectory} logExists={File.Exists(path+".log")}");
+            if(!anchored)throw new InvalidOperationException($"Tray icon anchor unavailable added={tray.IsAdded} ico={tray.IconLoaded} addErr={tray.LastAddError} modErr={tray.LastModifyError} light={TaskbarIsLight()} icon={Path.GetFileName(TrayIconPath())}");
             bool light=TaskbarIsLight();
             string chosen=Path.GetFileName(TrayIconPath());
             if(light && chosen!="tray-dark.ico")throw new InvalidOperationException("Light taskbar must get the dark glyph");
@@ -1273,7 +1267,7 @@ public sealed partial class MainWindow : Window
                     if(tray.TryGetAnchor(out int qx,out int qy))File.WriteAllText(path+".anchor2",$"{qx},{qy}");
                 }
             }
-            Diag("closing\n");Close();Diag("closed\n");return;
+            Close();return;
         }
         string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".", name = Path.GetFileName(path);
         await geometryReady;await PresentPreparedAsync();SetCloaked(false);flyoutVisible=true;

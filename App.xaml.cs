@@ -21,7 +21,6 @@ public partial class App : Application
             if(a.Contains("--update-e2e")){SelfTest.RunUpdateE2E();return;}
             int gi = Array.IndexOf(a,"--tray-guid");
             if(gi>=0 && gi+1<a.Length && Guid.TryParse(a[gi+1],out var overrideGuid))TrayIcon.OverrideGuid = overrideGuid;
-            if(a.Contains("--tray-capture")) { MainWindow.TrayDiag = a[Array.IndexOf(a,"--capture")+1]+".log"; File.WriteAllText(MainWindow.TrayDiag, "launched\n"); }
             bool capture = a.Contains("--capture"), background = a.Contains("--background");
             if (!capture)
             {
