@@ -1,0 +1,90 @@
+# ============================================================================
+# windows-vm-test - Real Windows 11 GUI test on a dockur/windows VM
+# ============================================================================
+# REUSABLE TEMPLATE (canonical copy: Star-Dust-0/fluent-prayer-times, main)
+#
+# To add this to a new Windows app repo:
+#   1. Copy this file to .github/workflows/windows-vm-test.yml
+#   2. Copy the .dockur-test/ folder (run.ps1, oem/install.bat)
+#   3. In .dockur-test/run.ps1 set the three variables at the top:
+#        $Repo, $AssetMatch, $ExeMatch
+#   That's it. Nothing else in these files is repo-specific.
+#
+# WHEN TO USE THIS (vs the normal CI runner):
+#   - The VM takes ~8-11 minutes just to boot Windows 11, so for plain
+#     build / compile / unit-test checks the normal runner stays faster.
+#   - Use this VM for what a headless runner cannot prove: GUI launch,
+#     installer behaviour, first-run experience, theme/RTL rendering and
+#     real screenshots of the app on a real Windows 11 desktop.
+#
+# SAFETY RULES (standing, per repo owner):
+#   - MANUAL TRIGGER ONLY (workflow_dispatch). Never add push, PR or
+#     schedule triggers to this workflow. It boots a full Windows VM and
+#     downloads a release - heavy. Repeated automated heavy runs risk the
+#     account (two previous accounts were suspended).
+#   - One proof run is enough; re-run only when GUI behaviour changes.
+#   - Concurrency below cancels an older still-running dispatch.
+#
+# HOW IT WORKS:
+#   ubuntu runner -> docker dockurr/windows (Win 11, KVM) -> shared folder
+#   -> oem/install.bat runs at first boot -> run.ps1 screenshots desktop,
+#   downloads the latest release portable zip, launches the app, screenshots
+#   it -> screenshots + logs uploaded as the "windows-vm-test-out" artifact.
+# ============================================================================
+name: windows-vm-test
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-vm-test
+  cancel-in-progress: true
+
+jobs:
+  win:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: KVM check
+        run: |
+          nproc; free -g | head -2; df -h / | tail -1
+          ls -l /dev/kvm || true
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules; sudo udevadm trigger --name-match=kvm || true
+          ls -l /dev/kvm
+      - name: Start dockur/windows
+        run: |
+          mkdir -p shared; cp .dockur-test/run.ps1 shared/run.ps1
+          docker run -d --name win -e VERSION=11l -e RAM_SIZE=6G -e CPU_CORES=3 -e DISK_SIZE=40G \
+            --device /dev/kvm --device /dev/net/tun --cap-add NET_ADMIN \
+            -p 8006:8006 -p 7100:7100 -e ARGUMENTS="-monitor telnet:0.0.0.0:7100,server,nowait" \
+            -v $PWD/shared:/shared -v $PWD/.dockur-test/oem:/oem docker.io/dockurr/windows
+          sleep 20; docker logs win | tail -20
+      - name: Wait for Windows
+        run: |
+          start=$(date +%s)
+          for i in $(seq 1 130); do
+            grep -q DONE shared/result.txt 2>/dev/null && break
+            if [ $((i%6)) -eq 0 ]; then
+              echo "t=$(( $(date +%s)-start ))s"; docker logs win 2>&1 | tail -3
+              python3 - <<'PY'
+          import socket,time
+          s=socket.create_connection(("127.0.0.1",7100),timeout=5); time.sleep(.5)
+          s.sendall(b"screendump /tmp/s.ppm\n"); time.sleep(1.5); s.close()
+          PY
+              docker cp win:/tmp/s.ppm s.ppm && (convert s.ppm shot-$i.png || python3 -c 'print(1)') || echo screendump-failed
+            fi
+            sleep 20
+          done
+          echo "total $(( $(date +%s)-start ))s"; cat shared/result.txt shared/ps-log.txt || echo NO_RESULT; ls -la shared
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-vm-test-out
+          path: |
+            shot-*.png
+            shared/*.png
+            shared/*.txt
+          retention-days: 3
+      - if: always()
+        run: docker logs win 2>&1 | tail -40
