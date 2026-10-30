@@ -20,6 +20,10 @@ $exe = Get-ChildItem C:\app -Recurse -Filter *.exe | ? { $_.Name -match $ExeMatc
 if (-not $exe) { "ERROR: no exe matches '$ExeMatch'"; exit 1 }
 "exe: $($exe.FullName)"
 Start-Process $exe.FullName
-Start-Sleep 25
+Start-Sleep 40
+# Close the Start menu / any first-run shell popup so the app is unobstructed
+$ws = New-Object -ComObject WScript.Shell
+$ws.SendKeys('{ESC}'); Start-Sleep 2
+$ws.SendKeys('{ESC}'); Start-Sleep 18
 Get-Process | ? { $_.Name -match $ExeMatch } | % { "proc: $($_.Name)" }
 Shot 'app'
