@@ -10,7 +10,7 @@ A small Windows 11-style toolbar for Lenovo **Legion** and **LOQ** laptops.
 [**Download**](../../releases) · [Features](#features) · [Screenshots](#screenshots) · [Compatibility](#compatibility) · [Installation](#installation) · [العربية](README.ar.md)
 
 **Developed by Mohamed Elnaggar**  
-*brought to you by app.instinct AI*
+*[brought to you by Instinct](https://instinct.com)*
 
 </div>
 
@@ -102,12 +102,6 @@ Unavailable hardware data is marked as such. Dedicated GPU memory is not inferre
 - **Organized Settings and About:** language, theme/accent, buttons, links and diagnostics, with Updates at the bottom. About shows the app version, developer/contributor credits, **GitHub Repo Link** and a manual update check.
 - **In-app updates:** when a newer release exists, the app downloads the matching installer itself with live progress, verifies its size and SHA-256 checksum, and installs only after you press "Install now". The download matches the current build's .NET package type, and the release page is one click away as a fallback. Automatic checks are enabled by default, 45 seconds after launch and every six hours after that; manual checks live in Settings and About.
 - **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
-- **Tray icon that stays visible:** the tray glyph follows the Windows taskbar theme - dark on a light taskbar, white on a dark one - and switches the moment Windows changes mode.
 - **Flyout behavior:** restored slide/fade show and hide animation, Mica backdrop and page fade/rise transitions. DWM cloaking avoids blank black frames when reopening from the tray; window resizing remains instant.
 - **Installer improvements:** desktop and Start menu shortcuts, plus shutdown and verification of running toolbar instances before replacing files during upgrades.
 
@@ -125,13 +119,13 @@ When reporting an issue, include your model, machine type, Windows version and t
 
 ## Installation
 
-Download a package from [**Releases**](../../releases):
+Download a package from [**Releases**](../../releases). All packages are self-contained: everything the app needs is bundled, so no .NET installation is required. File names start with `FluentVantageToolbar-v<version>-`.
 
-| Package | Best for | Requirement |
+| Package | Best for | Notes |
 | :--- | :--- | :--- |
-| `Setup-with-dotnet.exe` | Most users | Includes the required .NET runtime |
-| `Setup.exe` | Users with the runtime already installed | .NET 8 Desktop Runtime, x64 |
-| `portable-x64.zip` | Running without installation | Extract the entire ZIP; .NET 8 Desktop Runtime, x64 |
+| `installer-win-x64.exe` | Most users | Installs the app with desktop and Start menu shortcuts |
+| `portable-win-x64.zip` | Running without installation | Extract the entire ZIP and run **FluentLegionToolbar.exe** |
+| `full-offline-win-x64.zip` | Offline setups | The same installer, plus optional signed Microsoft runtime installers (not needed to run the app) |
 
 Windows x64 and compatible Lenovo drivers are required. Portable packages must be fully extracted before running **FluentLegionToolbar.exe**; the executable name is retained for upgrade compatibility.
 
@@ -152,9 +146,3 @@ The interface offers English, Arabic, French, German, Italian, Spanish, Portugue
 ## Credits
 
 LenovoLegionToolkit was used as a hardware-interface reference, not as copied implementation. Dashboard icons come from Microsoft's MIT-licensed [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). Lenovo, Legion, LOQ and Vantage are trademarks of their owners.
-
-
-
-
-
-
