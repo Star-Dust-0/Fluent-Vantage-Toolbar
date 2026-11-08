@@ -145,4 +145,10 @@ The interface offers English, Arabic, French, German, Italian, Spanish, Portugue
 
 ## Credits
 
-LenovoLegionToolkit was used as a hardware-interface reference, not as copied implementation. Dashboard icons come from Microsoft's MIT-licensed [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). Lenovo, Legion, LOQ and Vantage are trademarks of their owners.
+LenovoLegionToolkit was used as a hardware-interface reference, not as copied implementation. Dashboard icons come from Microsoft's MIT-licensed [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+
+## Trademarks and affiliation
+
+Lenovo, Legion, LOQ and Vantage, and the Legion logo used as this app's icon and tray glyph, are trademarks and the property of Lenovo. They are used for identification only, to show which devices this project works with. Fluent Vantage Toolbar is an independent project and is not affiliated with, sponsored or endorsed by Lenovo. The MIT license covers this project's own code and text; it does not grant any rights in Lenovo's trademarks.
+
+Microsoft, Windows, WinUI and Fluent are trademarks of the Microsoft group of companies.
