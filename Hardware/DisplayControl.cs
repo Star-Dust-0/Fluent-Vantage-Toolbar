@@ -20,7 +20,7 @@ static class DisplayControl
         var candidates = displays.Where(d => names.Contains(SourceName(d.DeviceName), StringComparer.OrdinalIgnoreCase)).ToArray();
         if (candidates.Length == 1) return candidates[0];
         // No arbitrary primary-screen fallback: that could change an external monitor.
-        throw new NotSupportedException("Internal display could not be identified safely. External displays are not changed.");
+        throw new DeviceMessageException("The laptop screen could not be identified safely, so nothing was changed. External displays are never changed.", "تعذّر تحديد شاشة الحاسوب المحمول بأمان، لذلك لم يتم تغيير شيء. لا يتم تغيير الشاشات الخارجية أبدًا.");
     }
     public static (int,int[]) Read()
     {
@@ -34,6 +34,8 @@ static class DisplayControl
         var d=Internal();var c=d.CurrentSetting;
         var match=d.GetPossibleSettings().FirstOrDefault(m=>m.Resolution==c.Resolution&&m.ColorDepth==c.ColorDepth&&m.IsInterlaced==c.IsInterlaced&&m.Frequency==hz)??throw new NotSupportedException("Requested refresh rate is not available at the current resolution.");
         d.SetSettings(new DisplaySetting(match,c.Position,c.Orientation,DisplayFixedOutput.Default),true);
+        // The mode change can take a moment to show up; poll briefly before calling it unconfirmed.
+        for(int i=0;i<10;i++){if(Internal().CurrentSetting.Frequency==hz)return;Thread.Sleep(100);}
         if(Internal().CurrentSetting.Frequency!=hz)throw new InvalidOperationException("Refresh rate change was not confirmed.");
     }
 }

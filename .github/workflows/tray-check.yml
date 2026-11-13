@@ -10,13 +10,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - uses: microsoft/setup-msbuild@v2
       - shell: pwsh
         run: |
           msbuild FluentLegionToolbar.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=false /p:PublishDir=out/
           if($LASTEXITCODE -ne 0) { throw 'Build failed' }
-          $buildDir=Join-Path $PWD 'bin/x64/Release/net8.0-windows10.0.19041.0/win-x64'
+          $buildDir=Join-Path $PWD 'bin/x64/Release/net10.0-windows10.0.19041.0/win-x64'
           Get-ChildItem $buildDir -Recurse -Include *.xbf,*.pri | ForEach-Object {
             $relative=$_.FullName.Substring($buildDir.Length+1)
             $destination=Join-Path (Join-Path $PWD 'out') $relative

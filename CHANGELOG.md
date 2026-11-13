@@ -1,3 +1,19 @@
+## 1.1.0
+
+### Changes
+- The battery percentage on the main screen now stays readable at every charge level: the digits draw white on the green fill and dark on the empty part.
+- When the app runs without administrator rights, a clear notice under the battery explains that hardware controls need them and how to fix it, instead of every control failing silently. On startup the app now also waits a moment for the elevated instance before giving up.
+- Clearer error messages: when Windows or the hardware refuses a change (for example a setting that needs AC power or the internal display), the message says so instead of a generic failure.
+- Reordering tiles on the main screen is more reliable.
+- Battery details now show a zero cycle count instead of hiding it, and no longer accept impossible manufacture dates.
+- Device names that were wrongly rejected (some Lenovo model names) are now accepted.
+- Empty readings no longer show stray units like " Wh" or "%".
+- Settings are saved atomically, so a crash or power cut while saving can no longer corrupt them; an invalid accent color falls back to the default instead of breaking the theme.
+- Updates are verified more strictly: a release file without a SHA-256 checksum is refused, and downloads are only accepted from GitHub release hosts.
+- Release notes shown after an update now cover only the version you installed.
+- Fixed rare crashes when closing the flyout, opening pages, or clicking tiles.
+- The app now runs on .NET 10 and Windows App SDK 2.6, the currently supported Microsoft runtimes.
+
 ## 1.0.0
 
 ### Changes

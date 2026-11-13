@@ -12,6 +12,19 @@ public partial class App : Application
         try { InitializeComponent(); } catch(Exception e) { Log(e); throw; }
     }
     static void Log(Exception e) { try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory,"launch-error.txt"),e.ToString()+"\n"); } catch { } }
+    /// <summary>The elevated instance owns Local\FluentLegionToolbar.Instance; a normal process may be denied access to it, which also proves it exists.</summary>
+    static bool WaitForElevatedInstance(int milliseconds)
+    {
+        var end = Environment.TickCount64 + milliseconds;
+        while (Environment.TickCount64 < end)
+        {
+            try { if (Mutex.TryOpenExisting(@"Local\FluentLegionToolbar.Instance", out var existing)) { existing.Dispose(); return true; } }
+            catch (UnauthorizedAccessException) { return true; }
+            catch { }
+            Thread.Sleep(100);
+        }
+        return false;
+    }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try
@@ -25,7 +38,12 @@ public partial class App : Application
             if (!capture)
             {
                 // Not elevated and the scheduled task exists: let the task start the elevated instance and leave quietly.
-                if (!Startup.IsAdmin() && !a.Contains("--no-elevate") && Startup.TryRunTask(background ? Startup.BackgroundTask : Startup.OpenTask)) { Environment.Exit(0); return; }
+                if (!Startup.IsAdmin() && !a.Contains("--no-elevate") && Startup.TryRunTask(background ? Startup.BackgroundTask : Startup.OpenTask))
+                {
+                    if (WaitForElevatedInstance(3000)) { Environment.Exit(0); return; }
+                    // The task ran but no elevated instance showed up: keep running here (with the administrator notice) instead of vanishing.
+                    FluentLegionToolbar.Hardware.DiagnosticLog.Write("Elevated instance did not start within 3 s; continuing without administrator rights.");
+                }
                 bool first;
                 try { instanceMutex = new Mutex(true, @"Local\FluentLegionToolbar.Instance", out first); }
                 catch (UnauthorizedAccessException) { first = false; }
