@@ -8,7 +8,7 @@ This application includes the following third-party packages:
 - WindowsDisplayAPI (1.3.0.13) - MIT License
   https://github.com/falahati/WindowsDisplayAPI
 
-- System.Management (8.0.0) - MIT License
+- System.Management (10.0.0) - MIT License
   https://github.com/dotnet/runtime
 
 - NAudio.Wasapi (2.2.1) - MIT License
