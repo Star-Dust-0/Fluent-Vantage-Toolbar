@@ -715,6 +715,9 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(graphic);
         chargeText = Text("", 12, false, SecondaryText);
         stack.Children.Add(chargeText);
+        // Hardware access needs administrator rights; without them every control fails, so say so instead of failing silently.
+        if (preview ? args.Contains("--admin-banner") : !Startup.IsAdmin())
+            stack.Children.Add(Text(L.T("Hardware controls need administrator rights. Reinstall with \"Start with Windows\" ticked, or run the app as administrator.", "تحتاج عناصر التحكم في العتاد إلى صلاحيات المسؤول. أعد التثبيت مع تحديد \"البدء مع ويندوز\"، أو شغّل البرنامج بصلاحيات المسؤول."), 12, false, SecondaryText));
 
         stack.Children.Add(HeaderRow(L.T("quick.header"), L.Ar ? "عن جهازك" : "About your device", OpenDashboard));
         var visible = OrderedTiles().Where(t => settings.IsTileVisible(t.Id)).ToList();

@@ -327,12 +327,25 @@ jobs:
             "$link -> $($shortcut.TargetPath) $($shortcut.Arguments)" | Add-Content installer-shortcuts.txt
           }
           Get-Content installer-shortcuts.txt
+      - name: Capture non-administrator banner
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force banner | Out-Null
+          foreach($language in @('english','arabic')) { foreach($theme in @('light','dark')) {
+            $path=Join-Path $PWD "banner/$language-$theme.png"
+            $arguments=@('--capture',$path,"--$theme",'--admin-banner')
+            if($language -eq 'arabic'){$arguments+='--arabic'}
+            $p=Start-Process .\out\FluentLegionToolbar.exe -ArgumentList $arguments -PassThru
+            if(-not $p.WaitForExit(180000)){Stop-Process $p.Id -Force;throw 'Banner capture timeout'}
+            if($p.ExitCode -ne 0 -or -not (Test-Path $path)){throw 'Banner capture failed'}
+          }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: private-test-build-and-captures
           path: |
             update-desktop/
+            banner/
             out/
             update-e2e.log
             tray-proof.txt
