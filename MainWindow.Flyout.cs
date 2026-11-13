@@ -68,7 +68,7 @@ public sealed partial class MainWindow
             int top=Math.Clamp(y-AppWindow.Size.Height-16,area.Y,Math.Max(area.Y,area.Y+area.Height-AppWindow.Size.Height-12));
             AppWindow.Move(new PointInt32(left,top));HideFromTaskbar();
             if(!AppWindow.IsVisible)AppWindow.Show(false);
-            flyoutMotion?.Stop();canvas.Opacity=MotionEnabled?0:1;canvas.RenderTransform=new TranslateTransform{Y=MotionEnabled?42:0};
+            flyoutMotion?.Stop();Root.Opacity=MotionEnabled?0:1;Root.RenderTransform=new TranslateTransform{Y=MotionEnabled?42:0};
             await PresentPreparedAsync();
             if(generation!=animationGeneration)return;
             SetCloaked(false);flyoutVisible=true;Activate();SetForegroundWindow(hwnd);
