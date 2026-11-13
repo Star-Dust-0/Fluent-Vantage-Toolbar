@@ -60,7 +60,9 @@ public sealed partial class MainWindow : Window
     Microsoft.UI.Xaml.Media.Animation.Storyboard? flyoutMotion;
     string view = "main";
     DateTime lastHidden = DateTime.MinValue;
-    TextBlock? percentText, chargeText, statusText;
+    TextBlock? percentText, chargeText, statusText, percentTextDark;
+    FontIcon? plugIconDark;
+    StackPanel? batteryCentre, batteryCentreDark;
     FontIcon? plugIcon;
     Border? batteryFill; Grid? batteryFillHost;
     Windows.UI.Color batteryColor = Windows.UI.Color.FromArgb(255, 156, 218, 155);
@@ -186,6 +188,7 @@ public sealed partial class MainWindow : Window
     {
         if(!flyoutVisible && !showingFlyout)return;
         int generation=++animationGeneration;lastHidden=DateTime.UtcNow;
+        showingFlyout=false; // any show still in flight is now superseded and exits early without clearing the flag
         if(flyoutVisible)await AnimateFlyout(false);
         if(generation!=animationGeneration)return;
         flyoutVisible=false;SetCloaked(true);
@@ -273,7 +276,7 @@ public sealed partial class MainWindow : Window
         } catch(Exception ex) when(!preview) {
             DiagnosticLog.Write("ShowFlyout failed: "+ex);
             try{ if(!flyoutVisible){SetCloaked(false);Activate();SetForegroundWindow(hwnd);flyoutVisible=true;} }catch{}
-        } finally {showingFlyout=false;}
+        } finally { if(generation==animationGeneration)showingFlyout=false; } // a superseded show leaves the flag to whoever superseded it
     }
 
     void ListenForShowRequests()
@@ -386,7 +389,25 @@ public sealed partial class MainWindow : Window
         busy = true;
         foreach (var button in tileButtons.Values) button.IsEnabled = false;
         try { await action(); current = await device.ReadAsync(); Apply(); }
-        catch (Exception e) { DiagnosticLog.Write("Control failed: " + e); current = await device.ReadAsync(); Apply(); dialogOpen = true; try { await new ContentDialog { XamlRoot = Root.XamlRoot, Title = L.T("notconfirmed"), Content = (L.Ar ? "لم يتأكد تغيير الإعداد. أعد المحاولة، وإذا استمرت المشكلة افتح سجل التشخيص من الإعدادات وأرسله للدعم." : "The setting change could not be confirmed. Try again. If it continues, open the diagnostic log in Settings and send it to support."), CloseButtonText = "OK" }.ShowAsync(); } finally { dialogOpen = false; } }
+        catch (Exception e)
+        {
+            DiagnosticLog.Write("Control failed: " + e);
+            try { current = await device.ReadAsync(); Apply(); } catch (Exception again) { DiagnosticLog.Write("Re-read after failure also failed: " + again.Message); }
+            bool refused = e is DeviceMessageException;
+            dialogOpen = true;
+            try
+            {
+                await new ContentDialog
+                {
+                    XamlRoot = Root.XamlRoot,
+                    Title = refused ? L.T("Can't change this setting", "تعذّر تغيير هذا الإعداد") : L.T("notconfirmed"),
+                    Content = refused ? L.T(((DeviceMessageException)e).English, ((DeviceMessageException)e).Arabic) : (L.Ar ? "لم يتأكد تغيير الإعداد. أعد المحاولة، وإذا استمرت المشكلة افتح سجل التشخيص من الإعدادات وأرسله للدعم." : "The setting change could not be confirmed. Try again. If it continues, open the diagnostic log in Settings and send it to support."),
+                    CloseButtonText = "OK"
+                }.ShowAsync();
+            }
+            catch (Exception dialogError) { DiagnosticLog.Write("Dialog failed: " + dialogError.Message); }
+            finally { dialogOpen = false; }
+        }
         finally { busy = false; }
     }
 
@@ -675,6 +696,16 @@ public sealed partial class MainWindow : Window
         var centre = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         centre.Children.Add(plugIcon); centre.Children.Add(percentText);
         inner.Children.Add(centre);
+        // Same text drawn a second time in the normal text colour. The white copy is clipped to the filled part of the bar and
+        // the dark copy to the empty part, so the text stays readable where it crosses the edge of the fill.
+        plugIconDark = Glyph("\uE945", 28);
+        percentTextDark = Text("--%", 44, true);
+        percentTextDark.TextWrapping = TextWrapping.NoWrap;
+        batteryCentreDark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        batteryCentreDark.Children.Add(plugIconDark); batteryCentreDark.Children.Add(percentTextDark);
+        inner.Children.Add(batteryCentreDark);
+        batteryCentre = centre;
+        centre.SizeChanged += (_, _) => UpdateBatteryFill();
         inner.SizeChanged += (_, _) => UpdateBatteryFill();
         outline.Child = inner;
         graphic.Children.Add(outline);
@@ -791,6 +822,14 @@ public sealed partial class MainWindow : Window
         bool centreOnFill = (percent ?? 0) >= 50;
         if (percentText != null) percentText.Foreground = onFill;
         if (plugIcon != null) plugIcon.Foreground = onFill;
+        if (percentTextDark != null && percentText != null) { percentTextDark.Text = percentText.Text; percentTextDark.Foreground = Primary; }
+        if (plugIconDark != null && plugIcon != null) { plugIconDark.Visibility = plugIcon.Visibility; plugIconDark.Foreground = Primary; }
+        if (batteryCentre != null && batteryCentreDark != null && batteryCentre.ActualWidth > 0)
+        {
+            double left = (batteryFillHost.ActualWidth - batteryCentre.ActualWidth) / 2, edge = Math.Clamp(batteryFill.Width - left, 0, batteryCentre.ActualWidth), h = Math.Max(1, batteryCentre.ActualHeight);
+            batteryCentre.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, edge, h) };
+            batteryCentreDark.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(edge, 0, Math.Max(0, batteryCentre.ActualWidth - edge), h) };
+        }
     }
 
     void Apply()
@@ -1049,34 +1088,49 @@ public sealed partial class MainWindow : Window
         return new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 12, 0) };
     }
 
+    // Drag state is shared; the window-level pointer handlers are added once, so rebuilding the rows no longer piles up handlers.
+    bool dragging, reorderHandlersAttached;
+    double dragStartY;
+    TranslateTransform? dragShift;
+    Grid? dragRow;
+    StackPanel? dragRows;
+
+    void FinishReorder(bool commit)
+    {
+        if(!dragging||dragRow==null||dragRows==null)return;
+        var row=dragRow;var rows=dragRows;
+        reorderTrace+=$" finish={commit},shift={dragShift?.Y};";dragging=false;reordering=false;
+        row.RenderTransform=new TranslateTransform();row.Opacity=1;row.BorderThickness=new Thickness(0);
+        if(commit) {
+            int old=rows.Children.IndexOf(row);double midpoint=dragStartY+(dragShift?.Y??0)+row.ActualHeight/2;
+            int target=0;foreach(var child in rows.Children.Cast<FrameworkElement>()) {
+                if(ReferenceEquals(child,row))continue;
+                double y=child.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
+                if(midpoint>y+child.ActualHeight/2+1)target++;
+            }
+            if(target!=old){rows.Children.Remove(row);rows.Children.Insert(target,row);}
+            settings.TileOrder=rows.Children.Cast<FrameworkElement>().Select(r=>(string)r.Tag).ToList();if(!preview)settings.Save();
+        }
+        dragRow=null;dragRows=null;dragShift=null;
+        Root.ReleasePointerCaptures();
+    }
+
     void AttachReorderPointer(Border handle,Grid row,StackPanel rows)
     {
-        bool dragging=false;double startY=0;TranslateTransform? shift=null;
-        void Finish(bool commit) {
-            if(!dragging)return;reorderTrace+=$" finish={commit},shift={shift?.Y};";dragging=false;reordering=false;
-            row.RenderTransform=new TranslateTransform();row.Opacity=1;row.BorderThickness=new Thickness(0);
-            if(commit) {
-                int old=rows.Children.IndexOf(row);double midpoint=startY+(shift?.Y??0)+row.ActualHeight/2;
-                int target=0;foreach(var child in rows.Children.Cast<FrameworkElement>()) {
-                    if(ReferenceEquals(child,row))continue;
-                    double y=child.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
-                    if(midpoint>y+child.ActualHeight/2+1)target++;
-                }
-                if(target!=old){rows.Children.Remove(row);rows.Children.Insert(target,row);}
-                settings.TileOrder=rows.Children.Cast<FrameworkElement>().Select(r=>(string)r.Tag).ToList();if(!preview)settings.Save();
-            }
-            Root.ReleasePointerCaptures();
+        if(!reorderHandlersAttached) {
+            reorderHandlersAttached=true;
+            Root.PointerMoved+=(_,e)=>{reorderMoves++;if(!dragging||dragRow==null||dragRows==null||dragShift==null)return;double y=e.GetCurrentPoint(dragRows).Position.Y;dragShift.Y=Math.Clamp(y-dragStartY-dragRow.ActualHeight/2,-dragStartY,Math.Max(0,dragRows.ActualHeight-dragStartY-dragRow.ActualHeight));e.Handled=true;};
+            Root.PointerReleased+=(_,e)=>{reorderReleases++;bool wasDragging=dragging;FinishReorder(true);if(wasDragging)e.Handled=true;};
+            Root.PointerCanceled+=(_,_)=>FinishReorder(false);Root.PointerCaptureLost+=(_,_)=>FinishReorder(false);
         }
         handle.PointerPressed+=(_,e)=>{
             reorderPresses++;reorderTrace+=$" press:mode={reorderMode},left={e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed};";if(!reorderMode || !e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)return;
             dragging=Root.CapturePointer(e.Pointer);reorderTrace+=$" captured={dragging};";if(!dragging)return;reordering=true;
-            startY=row.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
-            shift=new TranslateTransform();row.RenderTransform=shift;row.Opacity=.8;
+            dragRow=row;dragRows=rows;
+            dragStartY=row.TransformToVisual(rows).TransformPoint(new Windows.Foundation.Point()).Y;
+            dragShift=new TranslateTransform();row.RenderTransform=dragShift;row.Opacity=.8;
             row.BorderBrush=Primary;row.BorderThickness=new Thickness(1);e.Handled=true;
         };
-        Root.PointerMoved+=(_,e)=>{reorderMoves++;if(!dragging)return;double y=e.GetCurrentPoint(rows).Position.Y;shift!.Y=Math.Clamp(y-startY-row.ActualHeight/2,-startY,Math.Max(0,rows.ActualHeight-startY-row.ActualHeight));e.Handled=true;};
-        Root.PointerReleased+=(_,e)=>{reorderReleases++;Finish(true);e.Handled=true;};
-        Root.PointerCanceled+=(_,_)=>Finish(false);Root.PointerCaptureLost+=(_,_)=>Finish(false);
     }
 
     UIElement ToggleRow(string label, bool isOn, Action<bool> changed)

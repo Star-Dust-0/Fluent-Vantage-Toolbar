@@ -20,7 +20,7 @@ static class DisplayControl
         var candidates = displays.Where(d => names.Contains(SourceName(d.DeviceName), StringComparer.OrdinalIgnoreCase)).ToArray();
         if (candidates.Length == 1) return candidates[0];
         // No arbitrary primary-screen fallback: that could change an external monitor.
-        throw new NotSupportedException("Internal display could not be identified safely. External displays are not changed.");
+        throw new DeviceMessageException("The laptop screen could not be identified safely, so nothing was changed. External displays are never changed.", "تعذّر تحديد شاشة الحاسوب المحمول بأمان، لذلك لم يتم تغيير شيء. لا يتم تغيير الشاشات الخارجية أبدًا.");
     }
     public static (int,int[]) Read()
     {

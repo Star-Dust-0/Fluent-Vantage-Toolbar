@@ -135,7 +135,7 @@ public sealed class LegionDevice
         try {
             if(Touchpad("IsSupportSmartFan")<=0)throw new InvalidOperationException("Thermal mode is not supported by the provider");
             var previous=DecodeThermal(Touchpad("GetSmartFanMode"));var next=NextThermal(previous);
-            if(next==ThermalMode.Performance && (!GetSystemPowerStatus(out var power) || power.AC!=1))throw new InvalidOperationException("Performance mode requires AC power");
+            if(next==ThermalMode.Performance && (!GetSystemPowerStatus(out var power) || power.AC!=1))throw new DeviceMessageException("Performance mode needs the charger plugged in.", "يتطلب وضع الأداء توصيل الشاحن.");
             // Match Toolkit's documented firmware workaround for affected models.
             if(previous==ThermalMode.Quiet && next==ThermalMode.Performance){Touchpad("SetSmartFanMode",2);await Task.Delay(500);}
             Touchpad("SetSmartFanMode",(int)next);
