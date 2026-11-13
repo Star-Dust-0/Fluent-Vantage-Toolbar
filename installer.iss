@@ -92,14 +92,14 @@ begin
 end;
 
 #if Str(Bundled) == "0"
-function HasDotNet8: Boolean;
+function HasDotNet10: Boolean;
 var
   R: TFindRec;
 begin
   Result := False;
   { The app runtimeconfig requires Microsoft.NETCore.App, not WindowsDesktop.App.
     commonpf64 avoids the 32-bit installer's Program Files redirection. }
-  if FindFirst(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.NETCore.App\8.*'), R) then
+  if FindFirst(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.NETCore.App\10.*'), R) then
   begin
     repeat
       if ((R.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0) and
@@ -116,9 +116,9 @@ end;
 function InitializeSetup: Boolean;
 begin
   Result := True;
-  if not HasDotNet8 then
-    if MsgBox('The .NET 8 Runtime (x64) was not found. The app will not start without it.' + #13#10 +
-              'Install it from https://dotnet.microsoft.com/download/dotnet/8.0 or use the installer that includes .NET.' + #13#10#13#10 +
+  if not HasDotNet10 then
+    if MsgBox('The .NET 10 Runtime (x64) was not found. The app will not start without it.' + #13#10 +
+              'Install it from https://dotnet.microsoft.com/download/dotnet/10.0 or use the installer that includes .NET.' + #13#10#13#10 +
               'Continue anyway?', mbConfirmation, MB_YESNO) = IDNO then Result := False;
 end;
 #endif
