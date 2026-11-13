@@ -133,7 +133,7 @@ jobs:
           Copy-Item 'FluentVantageToolbar-v${{ steps.version.outputs.value }}-installer-win-x64.exe' offline/Install.exe
           $downloads = @(
             @{ url='https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.15/windowsdesktop-runtime-10.0.15-win-x64.exe'; name='windowsdesktop-runtime-x64.exe'; sha512='f838960962172f1a769c49fa600e6f60f56f8d08a28e3cb878890ffc2e3a7a2e1b65697588e23efa767b8b8e8523ec01f55e875120507dde16d9a0869102dab3' },
-            @{ url='https://aka.ms/windowsappsdk/1.6/1.6.250602001/windowsappruntimeinstall-x64.exe'; name='windowsappruntimeinstall-x64.exe'; sha512='' },
+            @{ url='https://aka.ms/windowsappsdk/2.6/latest/windowsappruntimeinstall-x64.exe'; name='windowsappruntimeinstall-x64.exe'; sha512='' },
             @{ url='https://aka.ms/vc14/vc_redist.x64.exe'; name='vc_redist.x64.exe'; sha512='' }
           )
           foreach ($file in $downloads) {
@@ -148,7 +148,7 @@ jobs:
           Run Install.exe to install the app without internet.
           Administrator rights are required for toolbar installation and hardware/startup features.
           The app includes .NET, Windows App SDK and VC runtime files. No separate runtime installation is required.
-          The runtimes folder additionally contains the original signed Microsoft offline installers for .NET Desktop Runtime 8, Windows App Runtime 1.6 and Visual C++ x64.
+          The runtimes folder additionally contains the original signed Microsoft offline installers for .NET Desktop Runtime 10, Windows App Runtime 2.6 and Visual C++ x64.
           These optional system installers can require administrator rights. They are not needed to run this app.
           '@ | Set-Content offline/README.txt -Encoding utf8
           Get-ChildItem offline -Recurse -File | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash | ConvertTo-Json | Set-Content offline/SHA256.json
