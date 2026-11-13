@@ -34,6 +34,8 @@ static class DisplayControl
         var d=Internal();var c=d.CurrentSetting;
         var match=d.GetPossibleSettings().FirstOrDefault(m=>m.Resolution==c.Resolution&&m.ColorDepth==c.ColorDepth&&m.IsInterlaced==c.IsInterlaced&&m.Frequency==hz)??throw new NotSupportedException("Requested refresh rate is not available at the current resolution.");
         d.SetSettings(new DisplaySetting(match,c.Position,c.Orientation,DisplayFixedOutput.Default),true);
+        // The mode change can take a moment to show up; poll briefly before calling it unconfirmed.
+        for(int i=0;i<10;i++){if(Internal().CurrentSetting.Frequency==hz)return;Thread.Sleep(100);}
         if(Internal().CurrentSetting.Frequency!=hz)throw new InvalidOperationException("Refresh rate change was not confirmed.");
     }
 }

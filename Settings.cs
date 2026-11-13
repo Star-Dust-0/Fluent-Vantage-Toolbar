@@ -29,7 +29,7 @@ public sealed class AppSettings
                 if(!loaded.HiddenTiles.Contains("fn"))loaded.HiddenTiles.Add("fn");
                 loaded.ThermalDefaultLayoutApplied=true;loaded.Save();
             }
-            loaded.AccentColor ??= DefaultAccentColor;
+            if(loaded.AccentColor==null || !System.Text.RegularExpressions.Regex.IsMatch(loaded.AccentColor,"^#[0-9A-Fa-f]{6}$"))loaded.AccentColor=DefaultAccentColor;
             return loaded;
         }} catch { }
         return new();
@@ -37,7 +37,13 @@ public sealed class AppSettings
 
     public void Save()
     {
-        try { Directory.CreateDirectory(Folder); File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); } catch { }
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            var temp = FilePath + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temp, FilePath, true);
+        } catch { }
     }
 
     public bool IsTileVisible(string id) => !HiddenTiles.Contains(id);

@@ -26,7 +26,7 @@ static class SelfTest
             Check("older gives none", MainWindow.UpdateAssetFor(Rel(Rj("v0.4.0", false, false, "FluentVantageToolbar-v0.4.0-installer-win-x64.exe")), new Version(1, 0, 0)) == null);
             Check("prerelease ignored", MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, true, "FluentVantageToolbar-v9.0.0-installer-win-x64.exe")), new Version(1, 0, 0)) == null);
             Check("draft ignored", MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", true, false, "FluentVantageToolbar-v9.0.0-installer-win-x64.exe")), new Version(1, 0, 0)) == null);
-            Check("download host: github.com and its asset hosts only", UpdateInstaller.IsTrustedSource(new Uri("https://github.com/a/b")) && UpdateInstaller.IsTrustedSource(new Uri("https://release-assets.githubusercontent.com/x")) && !UpdateInstaller.IsTrustedSource(new Uri("https://evil.example/x")) && !UpdateInstaller.IsTrustedSource(new Uri("http://github.com/a")) && !UpdateInstaller.IsTrustedSource(new Uri("https://githubusercontent.com.evil.example/x")));
+            Check("download host: github.com and its asset hosts only", UpdateInstaller.IsTrustedSource(new Uri("https://github.com/a/b")) && UpdateInstaller.IsTrustedSource(new Uri("https://release-assets.githubusercontent.com/x")) && UpdateInstaller.IsTrustedSource(new Uri("https://objects.githubusercontent.com/x")) && !UpdateInstaller.IsTrustedSource(new Uri("https://raw.githubusercontent.com/x")) && !UpdateInstaller.IsTrustedSource(new Uri("https://evil.example/x")) && !UpdateInstaller.IsTrustedSource(new Uri("http://github.com/a")) && !UpdateInstaller.IsTrustedSource(new Uri("https://githubusercontent.com.evil.example/x")));
             {
                 var tmp = Path.Combine(Path.GetTempPath(), "fvt-verify-" + Guid.NewGuid().ToString("N"));
                 var good = new byte[4096]; good[0] = (byte)'M'; good[1] = (byte)'Z'; File.WriteAllBytes(tmp, good);
@@ -34,10 +34,11 @@ static class SelfTest
                 bool Fails(UpdateAsset a) { try { UpdateInstaller.Verify(tmp, a); return false; } catch (InvalidDataException) { return true; } }
                 UpdateInstaller.Verify(tmp, new UpdateAsset("u", "n.exe", 4096, goodHash.ToLowerInvariant()));
                 Check("installer verification accepts matching size and checksum", true);
-                Check("installer verification rejects wrong size", Fails(new UpdateAsset("u", "n.exe", 4097, null)));
+                Check("installer verification rejects wrong size", Fails(new UpdateAsset("u", "n.exe", 4097, goodHash)));
                 Check("installer verification rejects wrong checksum", Fails(new UpdateAsset("u", "n.exe", 4096, new string('0', 64))));
                 var bad = (byte[])good.Clone(); bad[0] = 0; File.WriteAllBytes(tmp, bad);
-                Check("installer verification rejects non-executable file", Fails(new UpdateAsset("u", "n.exe", 4096, null)));
+                Check("installer verification rejects a release with no checksum", Fails(new UpdateAsset("u", "n.exe", 4096, null)));
+                Check("installer verification rejects non-executable file", Fails(new UpdateAsset("u", "n.exe", 4096, goodHash)));
                 File.Delete(tmp);
             }
             bool threw = false; try { MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "other.zip")), new Version(1, 0, 0)); } catch (InvalidOperationException) { threw = true; }

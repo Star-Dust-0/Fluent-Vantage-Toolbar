@@ -385,7 +385,16 @@ public sealed partial class MainWindow : Window
         finally { busy = false; }
     }
 
-    static void OpenUrl(string url) { try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { } }
+    // Only web links and the app's own diagnostic log are handed to the shell; anything else is ignored.
+    static void OpenUrl(string url)
+    {
+        try
+        {
+            bool web = Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+            bool log = string.Equals(url, DiagnosticLog.Path, StringComparison.OrdinalIgnoreCase) && File.Exists(url);
+            if (web || log) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        } catch { }
+    }
 
     async Task ConfirmTouchpadAsync(bool lockNow)
     {

@@ -13,7 +13,9 @@ static class UpdateInstaller
 
     /// <summary>GitHub serves release files from github.com and redirects to its own asset hosts; anything else is refused.</summary>
     internal static bool IsTrustedSource(Uri? uri) =>
-        uri != null && uri.Scheme == Uri.UriSchemeHttps && (uri.Host == "github.com" || uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
+        uri != null && uri.Scheme == Uri.UriSchemeHttps && TrustedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase);
+
+    static readonly string[] TrustedHosts = { "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com" };
 
     internal static void Verify(string path, UpdateAsset asset)
     {
@@ -21,12 +23,10 @@ static class UpdateInstaller
         if (asset.Size > 0 ? length != asset.Size : length < 1_000_000) throw new InvalidDataException("Installer size does not match the release.");
         using var stream = File.OpenRead(path);
         if (stream.ReadByte() != 'M' || stream.ReadByte() != 'Z') throw new InvalidDataException("Downloaded file is not a Windows installer.");
-        if (asset.Sha256 != null)
-        {
-            stream.Position = 0;
-            var hash = Convert.ToHexString(SHA256.HashData(stream));
-            if (!hash.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Installer checksum does not match the release.");
-        }
+        if (string.IsNullOrWhiteSpace(asset.Sha256)) throw new InvalidDataException("The release publishes no checksum for this installer.");
+        stream.Position = 0;
+        var hash = Convert.ToHexString(SHA256.HashData(stream));
+        if (!hash.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Installer checksum does not match the release.");
     }
 
     internal static async Task<string> DownloadAsync(UpdateAsset asset, Action<double> progress, CancellationToken cancel)
