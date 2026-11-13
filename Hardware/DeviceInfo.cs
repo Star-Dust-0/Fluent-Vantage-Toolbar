@@ -35,7 +35,9 @@ static class DeviceInfo
         }
     }
 
-    internal static bool ValidName(string value) => !string.IsNullOrWhiteSpace(value) && !new[]{"Not", "None", "Unknown", "Default", "To Be Filled", "System Product Name"}.Any(x=>value.Contains(x,StringComparison.OrdinalIgnoreCase));
+    static readonly string[] Placeholders = { "not specified", "not applicable", "not available", "none", "unknown", "default", "default string", "system product name", "system version", "system serial number", "n/a", "o.e.m.", "to be filled by o.e.m." };
+    // SMBIOS placeholder values only: a name that merely contains "not" or "none" (for example "Notebook") is a real value.
+    internal static bool ValidName(string value) => !string.IsNullOrWhiteSpace(value) && !Placeholders.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase) && !value.Trim().StartsWith("To Be Filled", StringComparison.OrdinalIgnoreCase);
 
     static (string name, string machineType, bool lenovo, bool ok) Read()
     {

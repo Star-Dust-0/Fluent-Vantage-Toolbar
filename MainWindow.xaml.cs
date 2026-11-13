@@ -177,7 +177,12 @@ public sealed partial class MainWindow : Window
         if(DwmGetWindowAttribute(hwnd,14,out uint actual,4)>=0 && ((actual&1)!=0)!=cloak)
             throw new InvalidOperationException("DWM cloak state differs from requested state");
     }
+    // Event-handler entry points: an exception here would reach the XAML UnhandledException handler and end the process, so it is logged instead.
     async void HideFlyout()
+    {
+        try { await HideFlyoutAsync(); } catch (Exception ex) { DiagnosticLog.Write("HideFlyout failed: " + ex); }
+    }
+    async Task HideFlyoutAsync()
     {
         if(!flyoutVisible && !showingFlyout)return;
         int generation=++animationGeneration;lastHidden=DateTime.UtcNow;
@@ -413,6 +418,10 @@ public sealed partial class MainWindow : Window
 
     async void OnTile(string id)
     {
+        try { await OnTileAsync(id); } catch (Exception ex) { DiagnosticLog.Write("Tile " + id + " failed: " + ex); }
+    }
+    async Task OnTileAsync(string id)
+    {
         DiagnosticLog.Write($"Tile clicked: {id}, busy={busy}, stateLoaded={current != null}");
         if (busy || current == null) { Apply(); return; }
         var c = current;
@@ -467,7 +476,7 @@ public sealed partial class MainWindow : Window
 
     bool pageNavigating;
     bool MotionEnabled => preview ? args.Contains("--interactive") : new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
-    async void Navigate(string target) => await NavigateAsync(target);
+    async void Navigate(string target) { try { await NavigateAsync(target); } catch (Exception ex) { DiagnosticLog.Write("Navigate " + target + " failed: " + ex); } }
     async Task NavigateAsync(string target)
     {
         if(pageNavigating || target==view)return;
@@ -539,7 +548,8 @@ public sealed partial class MainWindow : Window
     int nativeResizeCount;
     double frameWidthPixels=double.NaN,frameHeightPixels=double.NaN;
 
-    void ResizeForContent() => geometryReady=FitGeometryAsync(++geometryGeneration);
+    void ResizeForContent() => geometryReady=FitGeometrySafeAsync(++geometryGeneration);
+    async Task FitGeometrySafeAsync(int generation) { try { await FitGeometryAsync(generation); } catch (Exception ex) { DiagnosticLog.Write("FitGeometry failed: " + ex.Message); } }
 
     static Task NextFrameAsync()
     {

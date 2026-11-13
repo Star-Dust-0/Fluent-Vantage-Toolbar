@@ -11,7 +11,7 @@ public sealed record WarrantyResult(DateTime? Start, DateTime? End, string? Link
 
 public static class Details
 {
-    static double? FirstDouble(string query, string property)
+    static double? FirstDouble(string query, string property, bool allowZero = false)
     {
         using var search = new ManagementObjectSearcher(@"root\WMI", query);
         using var rows = search.Get();
@@ -20,7 +20,7 @@ public static class Details
             using (row)
             {
                 var value = Convert.ToDouble(row[property], CultureInfo.InvariantCulture);
-                if (value > 0) return value;
+                if (value > 0 || (allowZero && value == 0)) return value;
             }
         }
         return null;
@@ -32,7 +32,7 @@ public static class Details
         double? design = null, full = null; int? cycles = null; DateTime? date = null;
         try { design = FirstDouble("SELECT DesignedCapacity FROM BatteryStaticData", "DesignedCapacity"); } catch (Exception e) { problems.Add("Design capacity: " + e.Message); }
         try { full = FirstDouble("SELECT FullChargedCapacity FROM BatteryFullChargedCapacity", "FullChargedCapacity"); } catch (Exception e) { problems.Add("Full capacity: " + e.Message); }
-        try { var c = FirstDouble("SELECT CycleCount FROM BatteryCycleCount", "CycleCount"); if (c.HasValue) cycles = (int)c.Value; } catch (Exception e) { problems.Add("Cycle count: " + e.Message); }
+        try { var c = FirstDouble("SELECT CycleCount FROM BatteryCycleCount", "CycleCount", true); if (c.HasValue) cycles = (int)c.Value; } catch (Exception e) { problems.Add("Cycle count: " + e.Message); }
         try
         {
             for (uint index = 0; index < 3 && date == null; index++)
@@ -54,7 +54,7 @@ public static class Details
         {
             if (s < 1) return null;
             var date = new DateTime((s >> 9) + 1980, (s >> 5) & 15, s & 31, 0, 0, 0, DateTimeKind.Unspecified);
-            return date.Year is < 2018 or > 2030 ? null : date;
+            return date.Year is < 2018 || date.Year > DateTime.UtcNow.Year + 1 ? null : date;
         }
         catch { return null; }
     }

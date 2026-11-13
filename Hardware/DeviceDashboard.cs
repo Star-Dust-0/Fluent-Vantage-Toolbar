@@ -30,12 +30,12 @@ internal static class DeviceDashboard
         });
         cards.Add(new("Device", "\uE770", identity.ToArray()));
         Add("CPU", "\uE950", "Win32_Processor", "Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed", r => [
-            new("Processor",Value(r,"Name")),new("Manufacturer",Value(r,"Manufacturer")),new("Cores / threads",Value(r,"NumberOfCores")+" / "+Value(r,"NumberOfLogicalProcessors")),new("Maximum clock (reported)",Value(r,"MaxClockSpeed")+" MHz")]);
+            new("Processor",Value(r,"Name")),new("Manufacturer",Value(r,"Manufacturer")),new("Cores / threads",Value(r,"NumberOfCores")+" / "+Value(r,"NumberOfLogicalProcessors")),new("Maximum clock (reported)",WithUnit(Value(r,"MaxClockSpeed")," MHz"))]);
         Add("GPU", "\uE7F4", "Win32_VideoController", "Name,VideoProcessor,DriverVersion,DriverDate,AdapterRAM", r => [
             new("Adapter",Value(r,"Name")),new("Processor",Value(r,"VideoProcessor")),new("Driver",Value(r,"DriverVersion")),new("Driver date",Date(Value(r,"DriverDate"))),new("Memory", "Unavailable from reliable local API")]);
         // AdapterRAM is only UInt32 and often misleading. Do not label it as dedicated VRAM.
         Add("RAM", "\uE964", "Win32_PhysicalMemory", "Capacity,ConfiguredClockSpeed,Speed,Manufacturer,PartNumber,DeviceLocator,SMBIOSMemoryType", r => [
-            new("Slot",Value(r,"DeviceLocator")),new("Capacity",Bytes(r,"Capacity")),new("Type",MemoryType(Value(r,"SMBIOSMemoryType"))),new("Configured speed",Value(r,"ConfiguredClockSpeed")+" MT/s"),new("Rated speed",Value(r,"Speed")+" MT/s"),new("Manufacturer",Value(r,"Manufacturer")),new("Part",Value(r,"PartNumber"))]);
+            new("Slot",Value(r,"DeviceLocator")),new("Capacity",Bytes(r,"Capacity")),new("Type",MemoryType(Value(r,"SMBIOSMemoryType"))),new("Configured speed",WithUnit(Value(r,"ConfiguredClockSpeed")," MT/s")),new("Rated speed",WithUnit(Value(r,"Speed")," MT/s")),new("Manufacturer",Value(r,"Manufacturer")),new("Part",Value(r,"PartNumber"))]);
         Add("Motherboard", "\uE977", "Win32_BaseBoard", "Manufacturer,Product,Version", r => [new("Manufacturer",Value(r,"Manufacturer")),new("Product",Value(r,"Product")),new("Version",Value(r,"Version"))]);
         Add("Storage", "\uEDA2", "Win32_DiskDrive", "Model,Size,InterfaceType,MediaType,FirmwareRevision", r => [new("Drive",Value(r,"Model")),new("Capacity",Bytes(r,"Size")),new("Interface (reported)",Value(r,"InterfaceType")),new("Media",Value(r,"MediaType")),new("Firmware",Value(r,"FirmwareRevision"))]);
         Add("Volumes", "\uEDA2", "Win32_LogicalDisk", "DeviceID,VolumeName,Size,FreeSpace,FileSystem", r => [new("Volume",Value(r,"DeviceID")+" "+Value(r,"VolumeName")),new("Capacity",Bytes(r,"Size")),new("Free",Bytes(r,"FreeSpace")),new("File system",Value(r,"FileSystem"))], "DriveType=3");
@@ -52,7 +52,7 @@ internal static class DeviceDashboard
         } catch { displayFields.Add(new("Display information","Unavailable")); }
         if(displayFields.Count==0)displayFields.Add(new("Display information","Unavailable"));
         cards.Add(new("Displays","\uE7F4",displayFields.ToArray()));
-        Add("Battery", "\uE83F", "Win32_Battery", "Name,EstimatedChargeRemaining,DesignVoltage,Status", r => [new("Battery",Value(r,"Name")),new("Charge",Value(r,"EstimatedChargeRemaining")+"%"),new("Design voltage",Value(r,"DesignVoltage")+" mV"),new("Status (reported)",Value(r,"Status"))]);
+        Add("Battery", "\uE83F", "Win32_Battery", "Name,EstimatedChargeRemaining,DesignVoltage,Status", r => [new("Battery",Value(r,"Name")),new("Charge",WithUnit(Value(r,"EstimatedChargeRemaining"),"%")),new("Design voltage",WithUnit(Value(r,"DesignVoltage")," mV")),new("Status (reported)",Value(r,"Status"))]);
         Add("Network adapters", "\uE839", "Win32_NetworkAdapter", "Name,Manufacturer,MACAddress,NetEnabled,PhysicalAdapter", r => [new("Adapter",Value(r,"Name")),new("Manufacturer",Value(r,"Manufacturer")),new("MAC",Value(r,"MACAddress")),new("Enabled",Value(r,"NetEnabled"))], "PhysicalAdapter=True");
         return new DeviceSnapshot(serial,cards.ToArray());
         void Add(string title,string icon,string cls,string properties,Func<ManagementObject,DeviceField[]> map,string? filter=null) {
@@ -68,6 +68,7 @@ internal static class DeviceDashboard
             using var rows=search.Get();foreach(ManagementObject row in rows) using(row) read(row);
         } catch { /* Missing class/provider is not an empty hardware claim. */ }
     }
+    static string WithUnit(string value,string unit) => value=="Unavailable"?value:value+unit;
     static string Value(ManagementObject r,string field) {
         try { string text=Convert.ToString(r[field],CultureInfo.InvariantCulture)?.Trim()??"";return DeviceInfo.ValidName(text)?text:"Unavailable"; }catch{return "Unavailable";}
     }

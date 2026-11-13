@@ -43,6 +43,7 @@ static class SelfTest
             }
             bool threw = false; try { MainWindow.UpdateAssetFor(Rel(Rj("v9.0.0", false, false, "other.zip")), new Version(1, 0, 0)); } catch (InvalidOperationException) { threw = true; }
             Check("missing installer asset reports error", threw);
+            Check("name check: SMBIOS placeholders rejected, real names kept", !FluentLegionToolbar.Hardware.DeviceInfo.ValidName("To Be Filled By O.E.M.") && !FluentLegionToolbar.Hardware.DeviceInfo.ValidName("None") && !FluentLegionToolbar.Hardware.DeviceInfo.ValidName("Not Specified") && FluentLegionToolbar.Hardware.DeviceInfo.ValidName("Notebook") && FluentLegionToolbar.Hardware.DeviceInfo.ValidName("Legion 5 15ITH6H"));
             Check("tray icons: both glyphs ship and differ", File.Exists(Path.Combine(AppContext.BaseDirectory, "tray-dark.ico")) && File.Exists(Path.Combine(AppContext.BaseDirectory, "tray-white.ico")) && !File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "tray-dark.ico")).SequenceEqual(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "tray-white.ico"))));
         }
         catch (Exception ex) { log.Add("EXCEPTION " + ex); fails++; }
